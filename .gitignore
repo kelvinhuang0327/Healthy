@@ -10,10 +10,13 @@ htmlcov/
 
 # Node / Next.js / Playwright
 node_modules/
+.npm-cache/
 .next/
+*.tsbuildinfo
 playwright-report/
 test-results/
 .playwright/
+.node/
 
 # Local runtime
 *.log

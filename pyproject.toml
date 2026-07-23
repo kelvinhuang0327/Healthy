@@ -1,0 +1,52 @@
+[project]
+name = "healthy"
+version = "0.1.0"
+description = "Healthy modular monolith identity foundation"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "alembic==1.18.5",
+  "email-validator==2.3.0",
+  "fastapi==0.139.2",
+  "psycopg[binary]==3.3.4",
+  "pwdlib[argon2]==0.3.0",
+  "pydantic==2.13.4",
+  "sqlalchemy==2.0.51",
+  "uvicorn==0.51.0",
+]
+
+[dependency-groups]
+dev = [
+  "httpx==0.28.1",
+  "mypy==2.3.0",
+  "pytest==9.1.1",
+  "ruff==0.15.22",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["apps/api"]
+testpaths = ["tests/api"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S106", "S107"]
+
+[tool.mypy]
+python_version = "3.14"
+mypy_path = "apps/api"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["pwdlib.*"]
+ignore_missing_imports = true

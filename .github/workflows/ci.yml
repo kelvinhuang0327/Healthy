@@ -1,0 +1,81 @@
+name: Healthy P0 Verification
+
+"on":
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: healthy-p0-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_DB: healthy_test
+          POSTGRES_USER: healthy
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U healthy -d healthy_test"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@v9
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24.18.0"
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Install Playwright OS dependencies
+        run: npx playwright install-deps chromium
+
+      - name: Migration cycle and drift check
+        run: make migration-cycle
+
+      - name: API lint
+        run: make api-lint
+
+      - name: API typecheck
+        run: make api-typecheck
+
+      - name: API tests
+        run: make api-test
+
+      - name: OpenAPI parity
+        run: make openapi-check
+
+      - name: Web typecheck
+        run: make web-typecheck
+
+      - name: Web lint
+        run: make web-lint
+
+      - name: Web production build
+        run: make web-build
+
+      - name: Browser P0 flow
+        run: make browser-test

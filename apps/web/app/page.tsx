@@ -1,11 +1,20 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { api, type Person, type SessionSummary } from "../lib/api";
+import {
+  api,
+  type HealthMetric,
+  type Person,
+  type SessionSummary,
+} from "../lib/api";
 
 export default function Home() {
   const [session, setSession] = useState<SessionSummary | null>(null);
   const [persons, setPersons] = useState<Person[]>([]);
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(
+    null,
+  );
+  const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -20,6 +29,8 @@ export default function Home() {
     } catch {
       setSession(null);
       setPersons([]);
+      setSelectedPersonId(null);
+      setMetrics([]);
     }
   }
 
@@ -34,6 +45,34 @@ export default function Home() {
         setPersons([]);
       });
   }, []);
+
+  const selectedPerson =
+    persons.find((person) => person.id === selectedPersonId) ??
+    persons.find((person) => person.is_default) ??
+    persons[0];
+  const effectiveSelectedPersonId = selectedPerson?.id;
+
+  useEffect(() => {
+    if (!effectiveSelectedPersonId) {
+      return;
+    }
+    let cancelled = false;
+    api
+      .healthMetrics(effectiveSelectedPersonId)
+      .then((rows) => {
+        if (!cancelled) {
+          setMetrics(rows);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMetrics([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveSelectedPersonId]);
 
   async function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -93,9 +132,53 @@ export default function Home() {
       await api.logout();
       setSession(null);
       setPersons([]);
+      setSelectedPersonId(null);
+      setMetrics([]);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Logout failed");
+    }
+  }
+
+  function numberFieldOrNull(form: FormData, name: string): number | null {
+    const raw = form.get(name);
+    if (raw === null || raw === "") {
+      return null;
+    }
+    return Number(raw);
+  }
+
+  async function createHealthMetric(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const recordedAtLocal = String(form.get("recorded_at") ?? "");
+    const recordedAt = recordedAtLocal
+      ? new Date(recordedAtLocal).toISOString()
+      : new Date().toISOString();
+    const note = String(form.get("note") ?? "").trim();
+    try {
+      await api.createHealthMetric(personId, {
+        recorded_at: recordedAt,
+        systolic_bp_mm_hg: numberFieldOrNull(form, "systolic_bp_mm_hg"),
+        diastolic_bp_mm_hg: numberFieldOrNull(form, "diastolic_bp_mm_hg"),
+        heart_rate_bpm: numberFieldOrNull(form, "heart_rate_bpm"),
+        weight_kg: numberFieldOrNull(form, "weight_kg"),
+        blood_glucose_mg_dl: numberFieldOrNull(form, "blood_glucose_mg_dl"),
+        note: note || null,
+      });
+      formElement.reset();
+      const rows = await api.healthMetrics(personId);
+      setMetrics(rows);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Metric entry failed",
+      );
     }
   }
 
@@ -181,6 +264,9 @@ export default function Home() {
                   key={person.id}
                   data-testid="person-card"
                   data-person-id={person.id}
+                  onClick={() => setSelectedPersonId(person.id)}
+                  role="button"
+                  tabIndex={0}
                 >
                   <span>
                     <strong>{person.display_name}</strong>
@@ -189,6 +275,11 @@ export default function Home() {
                   </span>
                   {person.is_default ? (
                     <span className="pill">Default Person</span>
+                  ) : null}
+                  {person.id === selectedPersonId ? (
+                    <span className="pill" data-testid="selected-person-pill">
+                      Selected
+                    </span>
                   ) : null}
                 </li>
               ))}
@@ -215,6 +306,102 @@ export default function Home() {
               <button type="submit">Create Person</button>
             </form>
           </article>
+
+          {selectedPerson ? (
+            <article className="card">
+              <h2>Log a health metric for {selectedPerson.display_name}</h2>
+              <form onSubmit={createHealthMetric} data-testid="metric-form">
+                <label>
+                  Recorded at
+                  <input name="recorded_at" type="datetime-local" />
+                </label>
+                <label>
+                  Systolic blood pressure (mmHg)
+                  <input
+                    name="systolic_bp_mm_hg"
+                    type="number"
+                    min={30}
+                    max={300}
+                  />
+                </label>
+                <label>
+                  Diastolic blood pressure (mmHg)
+                  <input
+                    name="diastolic_bp_mm_hg"
+                    type="number"
+                    min={20}
+                    max={200}
+                  />
+                </label>
+                <label>
+                  Heart rate (bpm)
+                  <input name="heart_rate_bpm" type="number" min={20} max={300} />
+                </label>
+                <label>
+                  Weight (kg)
+                  <input
+                    name="weight_kg"
+                    type="number"
+                    step="0.01"
+                    min={1}
+                    max={500}
+                  />
+                </label>
+                <label>
+                  Blood glucose (mg/dL)
+                  <input
+                    name="blood_glucose_mg_dl"
+                    type="number"
+                    step="0.1"
+                    min={10}
+                    max={1000}
+                  />
+                </label>
+                <label>
+                  Note
+                  <input name="note" maxLength={2000} />
+                </label>
+                <button type="submit">Save metric</button>
+              </form>
+            </article>
+          ) : null}
+
+          {selectedPerson ? (
+            <article className="card">
+              <h2>Health metric history for {selectedPerson.display_name}</h2>
+              <ul className="metrics" data-testid="metric-list">
+                {metrics.map((metric) => (
+                  <li
+                    className="metric"
+                    key={metric.id}
+                    data-testid="metric-card"
+                    data-metric-id={metric.id}
+                  >
+                    <span>{new Date(metric.recorded_at).toLocaleString()}</span>
+                    <ul className="metric-values">
+                      {metric.systolic_bp_mm_hg !== null &&
+                      metric.diastolic_bp_mm_hg !== null ? (
+                        <li>
+                          {metric.systolic_bp_mm_hg}/{metric.diastolic_bp_mm_hg}{" "}
+                          mmHg
+                        </li>
+                      ) : null}
+                      {metric.heart_rate_bpm !== null ? (
+                        <li>{metric.heart_rate_bpm} bpm</li>
+                      ) : null}
+                      {metric.weight_kg !== null ? (
+                        <li>{metric.weight_kg} kg</li>
+                      ) : null}
+                      {metric.blood_glucose_mg_dl !== null ? (
+                        <li>{metric.blood_glucose_mg_dl} mg/dL</li>
+                      ) : null}
+                    </ul>
+                    {metric.note ? <p>{metric.note}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ) : null}
         </section>
       )}
     </main>

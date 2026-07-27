@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -9,6 +10,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
+    Numeric,
     String,
     Text,
     func,
@@ -18,6 +21,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import relationship as orm_relationship
 
+from healthy.domain import metrics as metrics_domain
 from healthy.infrastructure.database import Base
 
 
@@ -121,3 +125,69 @@ class Person(Base):
     )
 
     owner: Mapped[Account] = orm_relationship(back_populates="persons")
+
+
+class HealthMetric(Base):
+    __tablename__ = "health_metrics"
+    __table_args__ = (
+        CheckConstraint(
+            "(systolic_bp_mm_hg IS NULL) = (diastolic_bp_mm_hg IS NULL)",
+            name="bp_pairing",
+        ),
+        CheckConstraint(
+            "systolic_bp_mm_hg IS NOT NULL"
+            " OR diastolic_bp_mm_hg IS NOT NULL"
+            " OR heart_rate_bpm IS NOT NULL"
+            " OR weight_kg IS NOT NULL"
+            " OR blood_glucose_mg_dl IS NOT NULL",
+            name="at_least_one_value",
+        ),
+        CheckConstraint(
+            "systolic_bp_mm_hg IS NULL OR systolic_bp_mm_hg BETWEEN"
+            f" {metrics_domain.SYSTOLIC_BP_MM_HG_MIN} AND {metrics_domain.SYSTOLIC_BP_MM_HG_MAX}",
+            name="systolic_bp_mm_hg_bounds",
+        ),
+        CheckConstraint(
+            "diastolic_bp_mm_hg IS NULL OR diastolic_bp_mm_hg BETWEEN"
+            f" {metrics_domain.DIASTOLIC_BP_MM_HG_MIN} AND {metrics_domain.DIASTOLIC_BP_MM_HG_MAX}",
+            name="diastolic_bp_mm_hg_bounds",
+        ),
+        CheckConstraint(
+            "heart_rate_bpm IS NULL OR heart_rate_bpm BETWEEN"
+            f" {metrics_domain.HEART_RATE_BPM_MIN} AND {metrics_domain.HEART_RATE_BPM_MAX}",
+            name="heart_rate_bpm_bounds",
+        ),
+        CheckConstraint(
+            "weight_kg IS NULL OR weight_kg BETWEEN"
+            f" {metrics_domain.WEIGHT_KG_MIN} AND {metrics_domain.WEIGHT_KG_MAX}",
+            name="weight_kg_bounds",
+        ),
+        CheckConstraint(
+            "blood_glucose_mg_dl IS NULL OR blood_glucose_mg_dl BETWEEN"
+            f" {metrics_domain.BLOOD_GLUCOSE_MG_DL_MIN}"
+            f" AND {metrics_domain.BLOOD_GLUCOSE_MG_DL_MAX}",
+            name="blood_glucose_mg_dl_bounds",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="CASCADE"),
+        index=True,
+    )
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    systolic_bp_mm_hg: Mapped[int | None] = mapped_column(Integer)
+    diastolic_bp_mm_hg: Mapped[int | None] = mapped_column(Integer)
+    heart_rate_bpm: Mapped[int | None] = mapped_column(Integer)
+    weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    blood_glucose_mg_dl: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    note: Mapped[str | None] = mapped_column(String(metrics_domain.NOTE_MAX_LENGTH))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )

@@ -104,6 +104,17 @@ button.secondary {
   gap: 18px;
 }
 
+.session > div {
+  min-width: 0;
+}
+
+.session [data-testid="session-email"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .persons {
   display: grid;
   gap: 10px;

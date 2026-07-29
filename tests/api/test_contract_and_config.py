@@ -22,6 +22,8 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/persons/{person_id}",
         "/v1/persons/{person_id}/metrics",
         "/v1/persons/{person_id}/metrics/{metric_id}",
+        "/v1/persons/{person_id}/symptoms",
+        "/v1/persons/{person_id}/symptoms/{symptom_id}",
     }
     operations = {
         (method.upper(), path)
@@ -40,6 +42,9 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("POST", "/v1/persons/{person_id}/metrics"),
         ("GET", "/v1/persons/{person_id}/metrics"),
         ("GET", "/v1/persons/{person_id}/metrics/{metric_id}"),
+        ("POST", "/v1/persons/{person_id}/symptoms"),
+        ("GET", "/v1/persons/{person_id}/symptoms"),
+        ("GET", "/v1/persons/{person_id}/symptoms/{symptom_id}"),
     }
     security_schemes = document["components"]["securitySchemes"]
     assert security_schemes == {
@@ -73,6 +78,7 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "sessions",
         "persons",
         "health_metrics",
+        "symptom_logs",
     }
     assert {index["name"] for index in inspector.get_indexes("persons")} >= {
         "ix_persons_owner_account_id",
@@ -104,6 +110,24 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "ck_health_metrics_heart_rate_bpm_bounds",
         "ck_health_metrics_weight_kg_bounds",
         "ck_health_metrics_blood_glucose_mg_dl_bounds",
+    }
+    assert {index["name"] for index in inspector.get_indexes("symptom_logs")} >= {
+        "ix_symptom_logs_person_id",
+        "ix_symptom_logs_person_timeline",
+    }
+    symptom_foreign_keys = inspector.get_foreign_keys("symptom_logs")
+    assert {foreign_key["referred_table"] for foreign_key in symptom_foreign_keys} == {"persons"}
+    assert {foreign_key["options"].get("ondelete") for foreign_key in symptom_foreign_keys} == {
+        "CASCADE"
+    }
+    assert {
+        constraint["name"] for constraint in inspector.get_check_constraints("symptom_logs")
+    } == {
+        "ck_symptom_logs_symptom_length",
+        "ck_symptom_logs_symptom_trimmed",
+        "ck_symptom_logs_severity_bounds",
+        "ck_symptom_logs_duration_minutes_minimum",
+        "ck_symptom_logs_note_length",
     }
 
 

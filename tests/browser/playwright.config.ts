@@ -5,7 +5,11 @@ const databaseUrl =
 
 export default defineConfig({
   testDir: ".",
-  testMatch: ["identity.spec.ts", "health_metrics.spec.ts"],
+  testMatch: [
+    "identity.spec.ts",
+    "health_metrics.spec.ts",
+    "symptom_logs.spec.ts",
+  ],
   fullyParallel: false,
   workers: 1,
   retries: 0,

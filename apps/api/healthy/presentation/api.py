@@ -29,6 +29,8 @@ from healthy.presentation.schemas import (
     RegistrationResponse,
     SessionCreate,
     SessionSummary,
+    SymptomLogCreate,
+    SymptomLogSummary,
 )
 
 router = APIRouter(prefix="/v1")
@@ -289,3 +291,81 @@ def get_health_metric(
             detail="Metric not found",
         )
     return HealthMetricSummary.model_validate(metric)
+
+
+@router.post(
+    "/persons/{person_id}/symptoms",
+    response_model=SymptomLogSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_symptom_log(
+    person_id: uuid.UUID,
+    payload: SymptomLogCreate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> SymptomLogSummary:
+    try:
+        symptom_log = services.create_symptom_log(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            symptom=payload.symptom,
+            occurred_at=payload.occurred_at,
+            severity=payload.severity,
+            duration_minutes=payload.duration_minutes,
+            note=payload.note,
+        )
+    except services.SymptomLogIntegrityError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid request",
+        ) from error
+    if symptom_log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return SymptomLogSummary.model_validate(symptom_log)
+
+
+@router.get("/persons/{person_id}/symptoms", response_model=list[SymptomLogSummary])
+def get_symptom_logs(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> list[SymptomLogSummary]:
+    symptom_logs = services.list_symptom_logs(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+    )
+    if symptom_logs is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return [SymptomLogSummary.model_validate(symptom_log) for symptom_log in symptom_logs]
+
+
+@router.get(
+    "/persons/{person_id}/symptoms/{symptom_id}",
+    response_model=SymptomLogSummary,
+)
+def get_symptom_log(
+    person_id: uuid.UUID,
+    symptom_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> SymptomLogSummary:
+    symptom_log = services.get_symptom_log(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        symptom_id=symptom_id,
+    )
+    if symptom_log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Symptom record not found",
+        )
+    return SymptomLogSummary.model_validate(symptom_log)

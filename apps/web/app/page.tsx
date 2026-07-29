@@ -6,6 +6,7 @@ import {
   type HealthMetric,
   type Person,
   type SessionSummary,
+  type SymptomLog,
 } from "../lib/api";
 
 export default function Home() {
@@ -15,6 +16,7 @@ export default function Home() {
     null,
   );
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
+  const [symptomLogs, setSymptomLogs] = useState<SymptomLog[]>([]);
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -31,6 +33,7 @@ export default function Home() {
       setPersons([]);
       setSelectedPersonId(null);
       setMetrics([]);
+      setSymptomLogs([]);
     }
   }
 
@@ -57,16 +60,20 @@ export default function Home() {
       return;
     }
     let cancelled = false;
-    api
-      .healthMetrics(effectiveSelectedPersonId)
-      .then((rows) => {
+    Promise.all([
+      api.healthMetrics(effectiveSelectedPersonId),
+      api.symptomLogs(effectiveSelectedPersonId),
+    ])
+      .then(([metricRows, symptomRows]) => {
         if (!cancelled) {
-          setMetrics(rows);
+          setMetrics(metricRows);
+          setSymptomLogs(symptomRows);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setMetrics([]);
+          setSymptomLogs([]);
         }
       });
     return () => {
@@ -134,6 +141,7 @@ export default function Home() {
       setPersons([]);
       setSelectedPersonId(null);
       setMetrics([]);
+      setSymptomLogs([]);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Logout failed");
@@ -178,6 +186,34 @@ export default function Home() {
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Metric entry failed",
+      );
+    }
+  }
+
+  async function createSymptomLog(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const occurredAtLocal = String(form.get("occurred_at") ?? "");
+    const note = String(form.get("note") ?? "").trim();
+    try {
+      await api.createSymptomLog(personId, {
+        symptom: String(form.get("symptom") ?? "").trim(),
+        occurred_at: new Date(occurredAtLocal).toISOString(),
+        severity: Number(form.get("severity")),
+        duration_minutes: numberFieldOrNull(form, "duration_minutes"),
+        note: note || null,
+      });
+      formElement.reset();
+      setSymptomLogs(await api.symptomLogs(personId));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Symptom entry failed",
       );
     }
   }
@@ -306,6 +342,73 @@ export default function Home() {
               <button type="submit">Create Person</button>
             </form>
           </article>
+
+          {selectedPerson ? (
+            <article className="card">
+              <h2>Log a symptom for {selectedPerson.display_name}</h2>
+              <form onSubmit={createSymptomLog} data-testid="symptom-form">
+                <label>
+                  Symptom
+                  <input name="symptom" maxLength={120} required />
+                </label>
+                <label>
+                  Occurred at
+                  <input name="occurred_at" type="datetime-local" required />
+                </label>
+                <label>
+                  Severity (1-5)
+                  <input
+                    name="severity"
+                    type="number"
+                    min={1}
+                    max={5}
+                    required
+                  />
+                </label>
+                <label>
+                  Duration (minutes, optional)
+                  <input
+                    name="duration_minutes"
+                    type="number"
+                    min={1}
+                  />
+                </label>
+                <label>
+                  Note
+                  <input name="note" maxLength={2000} />
+                </label>
+                <button type="submit">Save symptom</button>
+              </form>
+            </article>
+          ) : null}
+
+          {selectedPerson ? (
+            <article className="card">
+              <h2>Symptom timeline for {selectedPerson.display_name}</h2>
+              <ul className="metrics" data-testid="symptom-list">
+                {symptomLogs.map((symptomLog) => (
+                  <li
+                    className="metric"
+                    key={symptomLog.id}
+                    data-testid="symptom-card"
+                    data-symptom-id={symptomLog.id}
+                  >
+                    <strong>{symptomLog.symptom}</strong>
+                    <span>
+                      {new Date(symptomLog.occurred_at).toLocaleString()}
+                    </span>
+                    <ul className="metric-values">
+                      <li>Severity {symptomLog.severity}/5</li>
+                      {symptomLog.duration_minutes !== null ? (
+                        <li>{symptomLog.duration_minutes} minutes</li>
+                      ) : null}
+                    </ul>
+                    {symptomLog.note ? <p>{symptomLog.note}</p> : null}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ) : null}
 
           {selectedPerson ? (
             <article className="card">

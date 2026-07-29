@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import relationship as orm_relationship
 
 from healthy.domain import metrics as metrics_domain
+from healthy.domain import symptoms as symptoms_domain
 from healthy.infrastructure.database import Base
 
 
@@ -125,6 +126,11 @@ class Person(Base):
     )
 
     owner: Mapped[Account] = orm_relationship(back_populates="persons")
+    symptom_logs: Mapped[list[SymptomLog]] = orm_relationship(
+        back_populates="person",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class HealthMetric(Base):
@@ -191,3 +197,59 @@ class HealthMetric(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
+
+
+class SymptomLog(Base):
+    __tablename__ = "symptom_logs"
+    __table_args__ = (
+        CheckConstraint(
+            f"char_length(symptom) BETWEEN 1 AND {symptoms_domain.SYMPTOM_MAX_LENGTH}",
+            name="symptom_length",
+        ),
+        CheckConstraint(
+            "symptom = btrim(symptom)",
+            name="symptom_trimmed",
+        ),
+        CheckConstraint(
+            f"severity BETWEEN {symptoms_domain.SEVERITY_MIN} AND {symptoms_domain.SEVERITY_MAX}",
+            name="severity_bounds",
+        ),
+        CheckConstraint(
+            "duration_minutes IS NULL"
+            f" OR duration_minutes >= {symptoms_domain.DURATION_MINUTES_MIN}",
+            name="duration_minutes_minimum",
+        ),
+        CheckConstraint(
+            f"note IS NULL OR char_length(note) <= {symptoms_domain.NOTE_MAX_LENGTH}",
+            name="note_length",
+        ),
+        Index(
+            "ix_symptom_logs_person_timeline",
+            "person_id",
+            text("occurred_at DESC"),
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="CASCADE"),
+        index=True,
+    )
+    symptom: Mapped[str] = mapped_column(String(symptoms_domain.SYMPTOM_MAX_LENGTH))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    severity: Mapped[int] = mapped_column(Integer)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(String(symptoms_domain.NOTE_MAX_LENGTH))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    person: Mapped[Person] = orm_relationship(back_populates="symptom_logs")

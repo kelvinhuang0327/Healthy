@@ -7,7 +7,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from healthy.infrastructure.models import HealthMetric, Person
+from healthy.infrastructure.models import HealthMetric, Person, SymptomLog
 
 
 class PersonRepository:
@@ -98,5 +98,54 @@ class HealthMetricRepository:
         statement = select(HealthMetric).where(
             HealthMetric.id == metric_id,
             HealthMetric.person_id == person_id,
+        )
+        return database_session.scalar(statement)
+
+
+class SymptomLogRepository:
+    @staticmethod
+    def create_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        *,
+        symptom: str,
+        occurred_at: datetime,
+        severity: int,
+        duration_minutes: int | None,
+        note: str | None,
+    ) -> SymptomLog:
+        symptom_log = SymptomLog(
+            person_id=person_id,
+            symptom=symptom,
+            occurred_at=occurred_at,
+            severity=severity,
+            duration_minutes=duration_minutes,
+            note=note,
+        )
+        database_session.add(symptom_log)
+        return symptom_log
+
+    @staticmethod
+    def list_for_person(database_session: Session, person_id: uuid.UUID) -> list[SymptomLog]:
+        statement = (
+            select(SymptomLog)
+            .where(SymptomLog.person_id == person_id)
+            .order_by(
+                SymptomLog.occurred_at.desc(),
+                SymptomLog.created_at.desc(),
+                SymptomLog.id.desc(),
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def get_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        symptom_id: uuid.UUID,
+    ) -> SymptomLog | None:
+        statement = select(SymptomLog).where(
+            SymptomLog.id == symptom_id,
+            SymptomLog.person_id == person_id,
         )
         return database_session.scalar(statement)

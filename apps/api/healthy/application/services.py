@@ -10,8 +10,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
-from healthy.infrastructure.models import Account, HealthMetric, Person, SessionRecord
-from healthy.infrastructure.repositories import HealthMetricRepository, PersonRepository
+from healthy.infrastructure.models import Account, HealthMetric, Person, SessionRecord, SymptomLog
+from healthy.infrastructure.repositories import (
+    HealthMetricRepository,
+    PersonRepository,
+    SymptomLogRepository,
+)
 from healthy.infrastructure.security import (
     hash_password,
     hash_session_token,
@@ -29,6 +33,10 @@ class InvalidCredentialsError(Exception):
 
 
 class HealthMetricIntegrityError(Exception):
+    pass
+
+
+class SymptomLogIntegrityError(Exception):
     pass
 
 
@@ -216,3 +224,59 @@ def get_health_metric(
     metric_id: uuid.UUID,
 ) -> HealthMetric | None:
     return HealthMetricRepository.get_for_person(database_session, person_id, metric_id)
+
+
+def create_symptom_log(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    symptom: str,
+    occurred_at: datetime,
+    severity: int,
+    duration_minutes: int | None,
+    note: str | None,
+) -> SymptomLog | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    symptom_log = SymptomLogRepository.create_for_person(
+        database_session,
+        person.id,
+        symptom=symptom,
+        occurred_at=occurred_at,
+        severity=severity,
+        duration_minutes=duration_minutes,
+        note=note,
+    )
+    try:
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise SymptomLogIntegrityError from error
+    return symptom_log
+
+
+def list_symptom_logs(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+) -> list[SymptomLog] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    return SymptomLogRepository.list_for_person(database_session, person.id)
+
+
+def get_symptom_log(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    symptom_id: uuid.UUID,
+) -> SymptomLog | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    return SymptomLogRepository.get_for_person(database_session, person.id, symptom_id)

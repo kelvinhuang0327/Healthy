@@ -40,6 +40,17 @@ export type HealthMetric = {
   created_at: string;
 };
 
+export type SymptomLog = {
+  id: string;
+  person_id: string;
+  symptom: string;
+  occurred_at: string;
+  severity: number;
+  duration_minutes: number | null;
+  note: string | null;
+  created_at: string;
+};
+
 function csrfToken(): string {
   const row = document.cookie
     .split("; ")
@@ -122,6 +133,24 @@ export const api = {
     },
   ) =>
     request<HealthMetric>(`/persons/${personId}/metrics`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  symptomLogs: (personId: string) =>
+    request<SymptomLog[]>(`/persons/${personId}/symptoms`),
+  symptomLog: (personId: string, symptomId: string) =>
+    request<SymptomLog>(`/persons/${personId}/symptoms/${symptomId}`),
+  createSymptomLog: (
+    personId: string,
+    payload: {
+      symptom: string;
+      occurred_at: string;
+      severity: number;
+      duration_minutes: number | null;
+      note: string | null;
+    },
+  ) =>
+    request<SymptomLog>(`/persons/${personId}/symptoms`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

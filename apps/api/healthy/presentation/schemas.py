@@ -17,6 +17,7 @@ from pydantic import (
 )
 
 from healthy.domain import metrics as metrics_domain
+from healthy.domain import symptoms as symptoms_domain
 from healthy.domain.identity import PersonRelationship
 
 JsonDecimal = Annotated[
@@ -156,5 +157,47 @@ class HealthMetricSummary(BaseModel):
     heart_rate_bpm: int | None
     weight_kg: JsonDecimal | None
     blood_glucose_mg_dl: JsonDecimal | None
+    note: str | None
+    created_at: datetime
+
+
+class SymptomLogCreate(BaseModel):
+    symptom: str = Field(min_length=1, max_length=symptoms_domain.SYMPTOM_MAX_LENGTH)
+    occurred_at: datetime
+    severity: int = Field(
+        ge=symptoms_domain.SEVERITY_MIN,
+        le=symptoms_domain.SEVERITY_MAX,
+    )
+    duration_minutes: int | None = Field(
+        default=None,
+        ge=symptoms_domain.DURATION_MINUTES_MIN,
+    )
+    note: str | None = Field(default=None, max_length=symptoms_domain.NOTE_MAX_LENGTH)
+
+    @field_validator("symptom")
+    @classmethod
+    def _normalize_symptom(cls, value: str) -> str:
+        return symptoms_domain.normalize_symptom(value)
+
+    @field_validator("occurred_at")
+    @classmethod
+    def _normalize_occurred_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("occurred_at must include timezone information")
+        normalized = value.astimezone(UTC)
+        if normalized > datetime.now(UTC) + symptoms_domain.OCCURRED_AT_MAX_FUTURE_SKEW:
+            raise ValueError("occurred_at cannot be more than five minutes in the future")
+        return normalized
+
+
+class SymptomLogSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    person_id: uuid.UUID
+    symptom: str
+    occurred_at: datetime
+    severity: int
+    duration_minutes: int | None
     note: str | None
     created_at: datetime

@@ -3,14 +3,15 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
-from healthy.infrastructure.models import Account, Person, SessionRecord
-from healthy.infrastructure.repositories import PersonRepository
+from healthy.infrastructure.models import Account, HealthMetric, Person, SessionRecord
+from healthy.infrastructure.repositories import HealthMetricRepository, PersonRepository
 from healthy.infrastructure.security import (
     hash_password,
     hash_session_token,
@@ -24,6 +25,10 @@ class DuplicateEmailError(Exception):
 
 
 class InvalidCredentialsError(Exception):
+    pass
+
+
+class HealthMetricIntegrityError(Exception):
     pass
 
 
@@ -168,3 +173,46 @@ def create_person(
     )
     database_session.commit()
     return person
+
+
+def create_health_metric(
+    database_session: Session,
+    *,
+    person_id: uuid.UUID,
+    recorded_at: datetime,
+    systolic_bp_mm_hg: int | None,
+    diastolic_bp_mm_hg: int | None,
+    heart_rate_bpm: int | None,
+    weight_kg: Decimal | None,
+    blood_glucose_mg_dl: Decimal | None,
+    note: str | None,
+) -> HealthMetric:
+    metric = HealthMetricRepository.create_for_person(
+        database_session,
+        person_id,
+        recorded_at=recorded_at,
+        systolic_bp_mm_hg=systolic_bp_mm_hg,
+        diastolic_bp_mm_hg=diastolic_bp_mm_hg,
+        heart_rate_bpm=heart_rate_bpm,
+        weight_kg=weight_kg,
+        blood_glucose_mg_dl=blood_glucose_mg_dl,
+        note=note,
+    )
+    try:
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise HealthMetricIntegrityError from error
+    return metric
+
+
+def list_health_metrics(database_session: Session, person_id: uuid.UUID) -> list[HealthMetric]:
+    return HealthMetricRepository.list_for_person(database_session, person_id)
+
+
+def get_health_metric(
+    database_session: Session,
+    person_id: uuid.UUID,
+    metric_id: uuid.UUID,
+) -> HealthMetric | None:
+    return HealthMetricRepository.get_for_person(database_session, person_id, metric_id)

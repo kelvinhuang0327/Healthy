@@ -20,6 +20,8 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/session",
         "/v1/persons",
         "/v1/persons/{person_id}",
+        "/v1/persons/{person_id}/metrics",
+        "/v1/persons/{person_id}/metrics/{metric_id}",
     }
     operations = {
         (method.upper(), path)
@@ -35,6 +37,9 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("GET", "/v1/persons"),
         ("POST", "/v1/persons"),
         ("GET", "/v1/persons/{person_id}"),
+        ("POST", "/v1/persons/{person_id}/metrics"),
+        ("GET", "/v1/persons/{person_id}/metrics"),
+        ("GET", "/v1/persons/{person_id}/metrics/{metric_id}"),
     }
     security_schemes = document["components"]["securitySchemes"]
     assert security_schemes == {
@@ -67,6 +72,7 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "accounts",
         "sessions",
         "persons",
+        "health_metrics",
     }
     assert {index["name"] for index in inspector.get_indexes("persons")} >= {
         "ix_persons_owner_account_id",
@@ -77,6 +83,27 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
     } == {"accounts"}
     assert {constraint["name"] for constraint in inspector.get_check_constraints("persons")} >= {
         "ck_persons_default_relationship_self"
+    }
+    assert {index["name"] for index in inspector.get_indexes("health_metrics")} >= {
+        "ix_health_metrics_person_id"
+    }
+    health_metric_foreign_keys = inspector.get_foreign_keys("health_metrics")
+    assert {foreign_key["referred_table"] for foreign_key in health_metric_foreign_keys} == {
+        "persons"
+    }
+    assert {
+        foreign_key["options"].get("ondelete") for foreign_key in health_metric_foreign_keys
+    } == {"CASCADE"}
+    assert {
+        constraint["name"] for constraint in inspector.get_check_constraints("health_metrics")
+    } == {
+        "ck_health_metrics_bp_pairing",
+        "ck_health_metrics_at_least_one_value",
+        "ck_health_metrics_systolic_bp_mm_hg_bounds",
+        "ck_health_metrics_diastolic_bp_mm_hg_bounds",
+        "ck_health_metrics_heart_rate_bpm_bounds",
+        "ck_health_metrics_weight_kg_bounds",
+        "ck_health_metrics_blood_glucose_mg_dl_bounds",
     }
 
 

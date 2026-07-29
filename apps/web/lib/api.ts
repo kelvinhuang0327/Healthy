@@ -27,6 +27,19 @@ export type Registration = {
   session: SessionSummary;
 };
 
+export type HealthMetric = {
+  id: string;
+  person_id: string;
+  recorded_at: string;
+  systolic_bp_mm_hg: number | null;
+  diastolic_bp_mm_hg: number | null;
+  heart_rate_bpm: number | null;
+  weight_kg: number | null;
+  blood_glucose_mg_dl: number | null;
+  note: string | null;
+  created_at: string;
+};
+
 function csrfToken(): string {
   const row = document.cookie
     .split("; ")
@@ -91,6 +104,24 @@ export const api = {
   person: (personId: string) => request<Person>(`/persons/${personId}`),
   createPerson: (payload: { display_name: string; relationship: string }) =>
     request<Person>("/persons", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  healthMetrics: (personId: string) =>
+    request<HealthMetric[]>(`/persons/${personId}/metrics`),
+  createHealthMetric: (
+    personId: string,
+    payload: {
+      recorded_at: string;
+      systolic_bp_mm_hg: number | null;
+      diastolic_bp_mm_hg: number | null;
+      heart_rate_bpm: number | null;
+      weight_kg: number | null;
+      blood_glucose_mg_dl: number | null;
+      note: string | null;
+    },
+  ) =>
+    request<HealthMetric>(`/persons/${personId}/metrics`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

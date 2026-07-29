@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from healthy.application import services
 from healthy.application.services import AuthenticatedSession
 from healthy.infrastructure.config import Settings
+from healthy.infrastructure.models import Person
 from healthy.presentation.dependencies import (
     CSRF_COOKIE,
     SESSION_COOKIE,
@@ -21,6 +22,8 @@ from healthy.presentation.dependencies import (
 from healthy.presentation.schemas import (
     AccountCreate,
     AccountSummary,
+    HealthMetricCreate,
+    HealthMetricSummary,
     PersonCreate,
     PersonSummary,
     RegistrationResponse,
@@ -209,3 +212,80 @@ def get_person(
             detail="Person not found",
         )
     return PersonSummary.model_validate(person)
+
+
+def _get_owned_person(
+    person_id: uuid.UUID,
+    authenticated: AuthenticatedSession,
+    database_session: Session,
+) -> Person:
+    person = services.get_person(database_session, authenticated.account.id, person_id)
+    if person is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return person
+
+
+@router.post(
+    "/persons/{person_id}/metrics",
+    response_model=HealthMetricSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_health_metric(
+    person_id: uuid.UUID,
+    payload: HealthMetricCreate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthMetricSummary:
+    person = _get_owned_person(person_id, authenticated, database_session)
+    try:
+        metric = services.create_health_metric(
+            database_session,
+            person_id=person.id,
+            recorded_at=payload.recorded_at,
+            systolic_bp_mm_hg=payload.systolic_bp_mm_hg,
+            diastolic_bp_mm_hg=payload.diastolic_bp_mm_hg,
+            heart_rate_bpm=payload.heart_rate_bpm,
+            weight_kg=payload.weight_kg,
+            blood_glucose_mg_dl=payload.blood_glucose_mg_dl,
+            note=payload.note,
+        )
+    except services.HealthMetricIntegrityError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid request",
+        ) from error
+    return HealthMetricSummary.model_validate(metric)
+
+
+@router.get("/persons/{person_id}/metrics", response_model=list[HealthMetricSummary])
+def get_health_metrics(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> list[HealthMetricSummary]:
+    _get_owned_person(person_id, authenticated, database_session)
+    metrics = services.list_health_metrics(database_session, person_id)
+    return [HealthMetricSummary.model_validate(metric) for metric in metrics]
+
+
+@router.get(
+    "/persons/{person_id}/metrics/{metric_id}",
+    response_model=HealthMetricSummary,
+)
+def get_health_metric(
+    person_id: uuid.UUID,
+    metric_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthMetricSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    metric = services.get_health_metric(database_session, person_id, metric_id)
+    if metric is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Metric not found",
+        )
+    return HealthMetricSummary.model_validate(metric)

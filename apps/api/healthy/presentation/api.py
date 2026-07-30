@@ -23,6 +23,8 @@ from healthy.presentation.schemas import (
     AccountCreate,
     AccountSummary,
     HealthActionCreate,
+    HealthActionOutcomeCreate,
+    HealthActionOutcomeSummary,
     HealthActionSummary,
     HealthMetricCreate,
     HealthMetricSummary,
@@ -479,3 +481,104 @@ def complete_health_action(
             detail="Action not found",
         )
     return HealthActionSummary.model_validate(action)
+
+
+@router.post(
+    "/persons/{person_id}/actions/{action_id}/outcomes",
+    response_model=HealthActionOutcomeSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_health_action_outcome(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    payload: HealthActionOutcomeCreate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthActionOutcomeSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    try:
+        outcome = services.create_health_action_outcome(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            action_id=action_id,
+            note=payload.note,
+            observed_at=payload.observed_at,
+        )
+    except (
+        services.HealthActionOutcomeIntegrityError,
+        services.HealthActionOutcomeInvalidStateError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid request",
+        ) from error
+    if outcome is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found",
+        )
+    return HealthActionOutcomeSummary.model_validate(outcome)
+
+
+@router.get(
+    "/persons/{person_id}/actions/{action_id}/outcomes",
+    response_model=list[HealthActionOutcomeSummary],
+)
+def get_health_action_outcomes(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> list[HealthActionOutcomeSummary]:
+    _get_owned_person(person_id, authenticated, database_session)
+    outcomes = services.list_health_action_outcomes(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        action_id=action_id,
+    )
+    if outcomes is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found",
+        )
+    return [HealthActionOutcomeSummary.model_validate(outcome) for outcome in outcomes]
+
+
+@router.get(
+    "/persons/{person_id}/actions/{action_id}/outcomes/{outcome_id}",
+    response_model=HealthActionOutcomeSummary,
+)
+def get_health_action_outcome(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    outcome_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthActionOutcomeSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    action = services.get_health_action(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        action_id=action_id,
+    )
+    if action is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found",
+        )
+    outcome = services.get_health_action_outcome(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        action_id=action.id,
+        outcome_id=outcome_id,
+    )
+    if outcome is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Outcome not found",
+        )
+    return HealthActionOutcomeSummary.model_validate(outcome)

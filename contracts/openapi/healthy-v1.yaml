@@ -113,6 +113,65 @@
         "title": "HealthActionCreate",
         "type": "object"
       },
+      "HealthActionOutcomeCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Note",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note",
+          "observed_at"
+        ],
+        "title": "HealthActionOutcomeCreate",
+        "type": "object"
+      },
+      "HealthActionOutcomeSummary": {
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action_id",
+          "note",
+          "observed_at",
+          "created_at"
+        ],
+        "title": "HealthActionOutcomeSummary",
+        "type": "object"
+      },
       "HealthActionStatus": {
         "enum": [
           "todo",
@@ -1166,6 +1225,225 @@
           }
         ],
         "summary": "Complete Health Action"
+      }
+    },
+    "/v1/persons/{person_id}/actions/{action_id}/outcomes": {
+      "get": {
+        "operationId": "get_health_action_outcomes_v1_persons__person_id__actions__action_id__outcomes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HealthActionOutcomeSummary"
+                  },
+                  "title": "Response Get Health Action Outcomes V1 Persons  Person Id  Actions  Action Id  Outcomes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Health Action Outcomes"
+      },
+      "post": {
+        "operationId": "post_health_action_outcome_v1_persons__person_id__actions__action_id__outcomes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthy_csrf",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthy Csrf"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthActionOutcomeCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthActionOutcomeSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Post Health Action Outcome"
+      }
+    },
+    "/v1/persons/{person_id}/actions/{action_id}/outcomes/{outcome_id}": {
+      "get": {
+        "operationId": "get_health_action_outcome_v1_persons__person_id__actions__action_id__outcomes__outcome_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "outcome_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Outcome Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthActionOutcomeSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Health Action Outcome"
       }
     },
     "/v1/persons/{person_id}/metrics": {

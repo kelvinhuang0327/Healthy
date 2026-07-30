@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   api,
+  type HealthAction,
   type HealthMetric,
   type Person,
   type SessionSummary,
@@ -17,6 +18,7 @@ export default function Home() {
   );
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [symptomLogs, setSymptomLogs] = useState<SymptomLog[]>([]);
+  const [healthActions, setHealthActions] = useState<HealthAction[]>([]);
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -34,6 +36,7 @@ export default function Home() {
       setSelectedPersonId(null);
       setMetrics([]);
       setSymptomLogs([]);
+      setHealthActions([]);
     }
   }
 
@@ -63,17 +66,20 @@ export default function Home() {
     Promise.all([
       api.healthMetrics(effectiveSelectedPersonId),
       api.symptomLogs(effectiveSelectedPersonId),
+      api.healthActions(effectiveSelectedPersonId),
     ])
-      .then(([metricRows, symptomRows]) => {
+      .then(([metricRows, symptomRows, actionRows]) => {
         if (!cancelled) {
           setMetrics(metricRows);
           setSymptomLogs(symptomRows);
+          setHealthActions(actionRows);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setMetrics([]);
           setSymptomLogs([]);
+          setHealthActions([]);
         }
       });
     return () => {
@@ -142,6 +148,7 @@ export default function Home() {
       setSelectedPersonId(null);
       setMetrics([]);
       setSymptomLogs([]);
+      setHealthActions([]);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Logout failed");
@@ -214,6 +221,48 @@ export default function Home() {
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Symptom entry failed",
+      );
+    }
+  }
+
+  async function createHealthAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const dueAtLocal = String(form.get("due_at") ?? "");
+    const description = String(form.get("description") ?? "").trim();
+    try {
+      await api.createHealthAction(personId, {
+        title: String(form.get("title") ?? "").trim(),
+        description: description || null,
+        due_at: dueAtLocal ? new Date(dueAtLocal).toISOString() : null,
+      });
+      formElement.reset();
+      setHealthActions(await api.healthActions(personId));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Action creation failed",
+      );
+    }
+  }
+
+  async function completeHealthAction(actionId: string) {
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      await api.completeHealthAction(personId, actionId);
+      setHealthActions(await api.healthActions(personId));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Action completion failed",
       );
     }
   }
@@ -342,6 +391,66 @@ export default function Home() {
               <button type="submit">Create Person</button>
             </form>
           </article>
+
+          {selectedPerson ? (
+            <article className="card">
+              <h2>Create an action for {selectedPerson.display_name}</h2>
+              <form onSubmit={createHealthAction} data-testid="action-form">
+                <label>
+                  Title
+                  <input name="title" maxLength={240} required />
+                </label>
+                <label>
+                  Description
+                  <input name="description" maxLength={2000} />
+                </label>
+                <label>
+                  Due at
+                  <input name="due_at" type="datetime-local" />
+                </label>
+                <button type="submit">Create action</button>
+              </form>
+            </article>
+          ) : null}
+
+          {selectedPerson ? (
+            <article className="card">
+              <h2>Actions for {selectedPerson.display_name}</h2>
+              <ul className="metrics" data-testid="action-list">
+                {healthActions.map((action) => (
+                  <li
+                    className="metric"
+                    key={action.id}
+                    data-testid="action-card"
+                    data-action-id={action.id}
+                    data-action-status={action.status}
+                    data-completed-at={action.completed_at ?? ""}
+                  >
+                    <strong>{action.title}</strong>
+                    <span>Status: {action.status}</span>
+                    {action.description ? <p>{action.description}</p> : null}
+                    {action.due_at ? (
+                      <span>Due {new Date(action.due_at).toLocaleString()}</span>
+                    ) : null}
+                    {action.completed_at ? (
+                      <span>
+                        Completed {new Date(action.completed_at).toLocaleString()}
+                      </span>
+                    ) : null}
+                    <button
+                      className="secondary"
+                      type="button"
+                      onClick={() => completeHealthAction(action.id)}
+                    >
+                      {action.status === "done"
+                        ? "Complete again"
+                        : "Complete action"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ) : null}
 
           {selectedPerson ? (
             <article className="card">

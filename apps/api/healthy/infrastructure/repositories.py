@@ -4,10 +4,11 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from healthy.infrastructure.models import HealthMetric, Person, SymptomLog
+from healthy.domain.actions import HealthActionStatus
+from healthy.infrastructure.models import HealthAction, HealthMetric, Person, SymptomLog
 
 
 class PersonRepository:
@@ -149,3 +150,75 @@ class SymptomLogRepository:
             SymptomLog.person_id == person_id,
         )
         return database_session.scalar(statement)
+
+
+class HealthActionRepository:
+    @staticmethod
+    def create_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        *,
+        title: str,
+        description: str | None,
+        due_at: datetime | None,
+    ) -> HealthAction:
+        action = HealthAction(
+            person_id=person_id,
+            title=title,
+            description=description,
+            due_at=due_at,
+        )
+        database_session.add(action)
+        return action
+
+    @staticmethod
+    def list_for_person(database_session: Session, person_id: uuid.UUID) -> list[HealthAction]:
+        statement = (
+            select(HealthAction)
+            .where(HealthAction.person_id == person_id)
+            .order_by(
+                HealthAction.created_at.desc(),
+                HealthAction.id.desc(),
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def get_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        action_id: uuid.UUID,
+    ) -> HealthAction | None:
+        statement = select(HealthAction).where(
+            HealthAction.id == action_id,
+            HealthAction.person_id == person_id,
+        )
+        return database_session.scalar(statement)
+
+    @classmethod
+    def complete_for_person(
+        cls,
+        database_session: Session,
+        person_id: uuid.UUID,
+        action_id: uuid.UUID,
+        completion_instant: datetime,
+    ) -> HealthAction | None:
+        statement = (
+            update(HealthAction)
+            .where(
+                HealthAction.id == action_id,
+                HealthAction.person_id == person_id,
+                HealthAction.status == HealthActionStatus.TODO,
+            )
+            .values(
+                status=HealthActionStatus.DONE,
+                completed_at=completion_instant,
+                updated_at=completion_instant,
+            )
+            .returning(HealthAction)
+            .execution_options(synchronize_session=False)
+        )
+        transitioned = database_session.scalars(statement).one_or_none()
+        if transitioned is not None:
+            return transitioned
+        return cls.get_for_person(database_session, person_id, action_id)

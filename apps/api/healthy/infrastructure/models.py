@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import relationship as orm_relationship
 
+from healthy.domain import actions as actions_domain
 from healthy.domain import metrics as metrics_domain
 from healthy.domain import symptoms as symptoms_domain
 from healthy.infrastructure.database import Base
@@ -127,6 +128,11 @@ class Person(Base):
 
     owner: Mapped[Account] = orm_relationship(back_populates="persons")
     symptom_logs: Mapped[list[SymptomLog]] = orm_relationship(
+        back_populates="person",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    health_actions: Mapped[list[HealthAction]] = orm_relationship(
         back_populates="person",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -253,3 +259,65 @@ class SymptomLog(Base):
     )
 
     person: Mapped[Person] = orm_relationship(back_populates="symptom_logs")
+
+
+class HealthAction(Base):
+    __tablename__ = "health_actions"
+    __table_args__ = (
+        CheckConstraint(
+            f"char_length(title) BETWEEN 1 AND {actions_domain.TITLE_MAX_LENGTH}",
+            name="title_length",
+        ),
+        CheckConstraint("title = btrim(title)", name="title_trimmed"),
+        CheckConstraint(
+            "status IN ('todo', 'done')",
+            name="status_allowed",
+        ),
+        CheckConstraint(
+            "(status = 'todo' AND completed_at IS NULL)"
+            " OR (status = 'done' AND completed_at IS NOT NULL)",
+            name="status_completion_consistent",
+        ),
+        CheckConstraint(
+            f"description IS NULL OR char_length(description)"
+            f" <= {actions_domain.DESCRIPTION_MAX_LENGTH}",
+            name="description_length",
+        ),
+        Index(
+            "ix_health_actions_person_timeline",
+            "person_id",
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="CASCADE"),
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(actions_domain.TITLE_MAX_LENGTH))
+    description: Mapped[str | None] = mapped_column(String(actions_domain.DESCRIPTION_MAX_LENGTH))
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default=actions_domain.HealthActionStatus.TODO,
+        server_default=text("'todo'"),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    person: Mapped[Person] = orm_relationship(back_populates="health_actions")

@@ -51,6 +51,18 @@ export type SymptomLog = {
   created_at: string;
 };
 
+export type HealthAction = {
+  id: string;
+  person_id: string;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  status: "todo" | "done";
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 function csrfToken(): string {
   const row = document.cookie
     .split("; ")
@@ -154,4 +166,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  healthActions: (personId: string) =>
+    request<HealthAction[]>(`/persons/${personId}/actions`),
+  healthAction: (personId: string, actionId: string) =>
+    request<HealthAction>(`/persons/${personId}/actions/${actionId}`),
+  createHealthAction: (
+    personId: string,
+    payload: {
+      title: string;
+      description: string | null;
+      due_at: string | null;
+    },
+  ) =>
+    request<HealthAction>(`/persons/${personId}/actions`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  completeHealthAction: (personId: string, actionId: string) =>
+    request<HealthAction>(
+      `/persons/${personId}/actions/${actionId}/complete`,
+      { method: "POST" },
+    ),
 };

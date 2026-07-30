@@ -32,9 +32,10 @@ test("selected Person actions reload from the API and complete idempotently", as
   await expect(page.getByTestId("selected-person-pill")).toBeVisible();
 
   const form = page.getByTestId("action-form");
+  const dueAtLocal = "2026-08-01T18:30";
   await form.getByLabel("Title").fill("Evening walk");
   await form.getByLabel("Description").fill("Walk around the neighborhood");
-  await form.getByLabel("Due at").fill("2026-08-01T18:30");
+  await form.getByLabel("Due at").fill(dueAtLocal);
   await form.getByRole("button", { name: "Create action" }).click();
 
   const actionList = page.getByTestId("action-list");
@@ -58,7 +59,11 @@ test("selected Person actions reload from the API and complete idempotently", as
   }, defaultPersonId);
   expect(apiAction.id).toBe(actionId);
   expect(apiAction.description).toBe("Walk around the neighborhood");
-  expect(apiAction.due_at).toBe("2026-08-01T10:30:00Z");
+  const expectedDueAt = await page.evaluate(
+    (localDueAt) => new Date(localDueAt).toISOString().replace(".000Z", "Z"),
+    dueAtLocal,
+  );
+  expect(apiAction.due_at).toBe(expectedDueAt);
   const displayedDueAt = await page.evaluate(
     (dueAt) => new Date(dueAt).toLocaleString(),
     apiAction.due_at,

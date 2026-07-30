@@ -16,6 +16,7 @@ from pydantic import (
     model_validator,
 )
 
+from healthy.domain import actions as actions_domain
 from healthy.domain import metrics as metrics_domain
 from healthy.domain import symptoms as symptoms_domain
 from healthy.domain.identity import PersonRelationship
@@ -201,3 +202,47 @@ class SymptomLogSummary(BaseModel):
     duration_minutes: int | None
     note: str | None
     created_at: datetime
+
+
+class HealthActionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=actions_domain.TITLE_MAX_LENGTH)
+    description: str | None = Field(
+        default=None,
+        max_length=actions_domain.DESCRIPTION_MAX_LENGTH,
+    )
+    due_at: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _normalize_title(cls, value: str) -> str:
+        return actions_domain.normalize_title(value)
+
+    @field_validator("description")
+    @classmethod
+    def _normalize_description(cls, value: str | None) -> str | None:
+        return actions_domain.normalize_description(value)
+
+    @field_validator("due_at")
+    @classmethod
+    def _normalize_due_at(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("due_at must include timezone information")
+        return value.astimezone(UTC)
+
+
+class HealthActionSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    person_id: uuid.UUID
+    title: str
+    description: str | None
+    due_at: datetime | None
+    status: actions_domain.HealthActionStatus
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime

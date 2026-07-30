@@ -9,9 +9,18 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from healthy.domain import actions as actions_domain
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
-from healthy.infrastructure.models import Account, HealthMetric, Person, SessionRecord, SymptomLog
+from healthy.infrastructure.models import (
+    Account,
+    HealthAction,
+    HealthMetric,
+    Person,
+    SessionRecord,
+    SymptomLog,
+)
 from healthy.infrastructure.repositories import (
+    HealthActionRepository,
     HealthMetricRepository,
     PersonRepository,
     SymptomLogRepository,
@@ -37,6 +46,10 @@ class HealthMetricIntegrityError(Exception):
 
 
 class SymptomLogIntegrityError(Exception):
+    pass
+
+
+class HealthActionIntegrityError(Exception):
     pass
 
 
@@ -280,3 +293,80 @@ def get_symptom_log(
     if person is None:
         return None
     return SymptomLogRepository.get_for_person(database_session, person.id, symptom_id)
+
+
+def create_health_action(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    title: str,
+    description: str | None,
+    due_at: datetime | None,
+) -> HealthAction | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.create_for_person(
+        database_session,
+        person.id,
+        title=actions_domain.normalize_title(title),
+        description=actions_domain.normalize_description(description),
+        due_at=due_at,
+    )
+    try:
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise HealthActionIntegrityError from error
+    return action
+
+
+def list_health_actions(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+) -> list[HealthAction] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    return HealthActionRepository.list_for_person(database_session, person.id)
+
+
+def get_health_action(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+) -> HealthAction | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    return HealthActionRepository.get_for_person(database_session, person.id, action_id)
+
+
+def complete_health_action(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+) -> HealthAction | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    try:
+        action = HealthActionRepository.complete_for_person(
+            database_session,
+            person.id,
+            action_id,
+            datetime.now(UTC),
+        )
+        if action is not None and action.status == actions_domain.HealthActionStatus.DONE:
+            database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise HealthActionIntegrityError from error
+    return action

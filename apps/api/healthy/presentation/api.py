@@ -22,6 +22,8 @@ from healthy.presentation.dependencies import (
 from healthy.presentation.schemas import (
     AccountCreate,
     AccountSummary,
+    HealthActionCreate,
+    HealthActionSummary,
     HealthMetricCreate,
     HealthMetricSummary,
     PersonCreate,
@@ -369,3 +371,111 @@ def get_symptom_log(
             detail="Symptom record not found",
         )
     return SymptomLogSummary.model_validate(symptom_log)
+
+
+@router.post(
+    "/persons/{person_id}/actions",
+    response_model=HealthActionSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_health_action(
+    person_id: uuid.UUID,
+    payload: HealthActionCreate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthActionSummary:
+    try:
+        action = services.create_health_action(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            title=payload.title,
+            description=payload.description,
+            due_at=payload.due_at,
+        )
+    except services.HealthActionIntegrityError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid request",
+        ) from error
+    if action is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return HealthActionSummary.model_validate(action)
+
+
+@router.get("/persons/{person_id}/actions", response_model=list[HealthActionSummary])
+def get_health_actions(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> list[HealthActionSummary]:
+    actions = services.list_health_actions(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+    )
+    if actions is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return [HealthActionSummary.model_validate(action) for action in actions]
+
+
+@router.get(
+    "/persons/{person_id}/actions/{action_id}",
+    response_model=HealthActionSummary,
+)
+def get_health_action(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthActionSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    action = services.get_health_action(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        action_id=action_id,
+    )
+    if action is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found",
+        )
+    return HealthActionSummary.model_validate(action)
+
+
+@router.post(
+    "/persons/{person_id}/actions/{action_id}/complete",
+    response_model=HealthActionSummary,
+)
+def complete_health_action(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthActionSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    try:
+        action = services.complete_health_action(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            action_id=action_id,
+        )
+    except services.HealthActionIntegrityError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid request",
+        ) from error
+    if action is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found",
+        )
+    return HealthActionSummary.model_validate(action)

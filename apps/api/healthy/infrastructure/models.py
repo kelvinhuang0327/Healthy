@@ -23,6 +23,7 @@ from sqlalchemy.orm import relationship as orm_relationship
 
 from healthy.domain import actions as actions_domain
 from healthy.domain import metrics as metrics_domain
+from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import symptoms as symptoms_domain
 from healthy.infrastructure.database import Base
 
@@ -321,3 +322,45 @@ class HealthAction(Base):
     )
 
     person: Mapped[Person] = orm_relationship(back_populates="health_actions")
+    outcomes: Mapped[list[HealthActionOutcome]] = orm_relationship(
+        back_populates="action",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class HealthActionOutcome(Base):
+    __tablename__ = "health_action_outcomes"
+    __table_args__ = (
+        CheckConstraint(
+            f"char_length(note) BETWEEN 1 AND {outcomes_domain.NOTE_MAX_LENGTH}",
+            name="note_length",
+        ),
+        CheckConstraint("note = btrim(note)", name="note_trimmed"),
+        Index(
+            "ix_health_action_outcomes_action_timeline",
+            "action_id",
+            text("observed_at DESC"),
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    action_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("health_actions.id", ondelete="CASCADE"),
+        index=True,
+    )
+    note: Mapped[str] = mapped_column(String(outcomes_domain.NOTE_MAX_LENGTH))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    action: Mapped[HealthAction] = orm_relationship(back_populates="outcomes")

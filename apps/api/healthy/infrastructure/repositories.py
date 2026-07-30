@@ -8,7 +8,13 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from healthy.domain.actions import HealthActionStatus
-from healthy.infrastructure.models import HealthAction, HealthMetric, Person, SymptomLog
+from healthy.infrastructure.models import (
+    HealthAction,
+    HealthActionOutcome,
+    HealthMetric,
+    Person,
+    SymptomLog,
+)
 
 
 class PersonRepository:
@@ -222,3 +228,49 @@ class HealthActionRepository:
         if transitioned is not None:
             return transitioned
         return cls.get_for_person(database_session, person_id, action_id)
+
+
+class HealthActionOutcomeRepository:
+    @staticmethod
+    def create_for_action(
+        database_session: Session,
+        action_id: uuid.UUID,
+        *,
+        note: str,
+        observed_at: datetime,
+    ) -> HealthActionOutcome:
+        outcome = HealthActionOutcome(
+            action_id=action_id,
+            note=note,
+            observed_at=observed_at,
+        )
+        database_session.add(outcome)
+        return outcome
+
+    @staticmethod
+    def list_for_action(
+        database_session: Session,
+        action_id: uuid.UUID,
+    ) -> list[HealthActionOutcome]:
+        statement = (
+            select(HealthActionOutcome)
+            .where(HealthActionOutcome.action_id == action_id)
+            .order_by(
+                HealthActionOutcome.observed_at.desc(),
+                HealthActionOutcome.created_at.desc(),
+                HealthActionOutcome.id.desc(),
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def get_for_action(
+        database_session: Session,
+        action_id: uuid.UUID,
+        outcome_id: uuid.UUID,
+    ) -> HealthActionOutcome | None:
+        statement = select(HealthActionOutcome).where(
+            HealthActionOutcome.id == outcome_id,
+            HealthActionOutcome.action_id == action_id,
+        )
+        return database_session.scalar(statement)

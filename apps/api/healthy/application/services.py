@@ -10,16 +10,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from healthy.domain import actions as actions_domain
+from healthy.domain import outcomes as outcomes_domain
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
 from healthy.infrastructure.models import (
     Account,
     HealthAction,
+    HealthActionOutcome,
     HealthMetric,
     Person,
     SessionRecord,
     SymptomLog,
 )
 from healthy.infrastructure.repositories import (
+    HealthActionOutcomeRepository,
     HealthActionRepository,
     HealthMetricRepository,
     PersonRepository,
@@ -50,6 +53,14 @@ class SymptomLogIntegrityError(Exception):
 
 
 class HealthActionIntegrityError(Exception):
+    pass
+
+
+class HealthActionOutcomeIntegrityError(Exception):
+    pass
+
+
+class HealthActionOutcomeInvalidStateError(Exception):
     pass
 
 
@@ -370,3 +381,71 @@ def complete_health_action(
         database_session.rollback()
         raise HealthActionIntegrityError from error
     return action
+
+
+def create_health_action_outcome(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    note: str,
+    observed_at: datetime,
+) -> HealthActionOutcome | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    if action.status != actions_domain.HealthActionStatus.DONE:
+        raise HealthActionOutcomeInvalidStateError
+    outcome = HealthActionOutcomeRepository.create_for_action(
+        database_session,
+        action.id,
+        note=outcomes_domain.normalize_note(note),
+        observed_at=observed_at,
+    )
+    try:
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise HealthActionOutcomeIntegrityError from error
+    return outcome
+
+
+def list_health_action_outcomes(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+) -> list[HealthActionOutcome] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    return HealthActionOutcomeRepository.list_for_action(database_session, action.id)
+
+
+def get_health_action_outcome(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    outcome_id: uuid.UUID,
+) -> HealthActionOutcome | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    return HealthActionOutcomeRepository.get_for_action(
+        database_session,
+        action.id,
+        outcome_id,
+    )

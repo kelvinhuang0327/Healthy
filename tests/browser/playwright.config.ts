@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
 const databaseUrl =
+  process.env.HEALTHY_DATABASE_URL ??
   "postgresql+psycopg://healthy@127.0.0.1:55432/healthy_test";
 
 export default defineConfig({

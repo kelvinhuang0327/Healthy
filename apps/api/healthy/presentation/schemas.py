@@ -18,6 +18,7 @@ from pydantic import (
 
 from healthy.domain import actions as actions_domain
 from healthy.domain import metrics as metrics_domain
+from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import symptoms as symptoms_domain
 from healthy.domain.identity import PersonRelationship
 
@@ -246,3 +247,37 @@ class HealthActionSummary(BaseModel):
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class HealthActionOutcomeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    note: str = Field(min_length=1, max_length=outcomes_domain.NOTE_MAX_LENGTH)
+    observed_at: datetime
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def _normalize_note(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("note must be a string")
+        return outcomes_domain.normalize_note(value)
+
+    @field_validator("observed_at")
+    @classmethod
+    def _normalize_observed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("observed_at must include timezone information")
+        normalized = value.astimezone(UTC)
+        if normalized > datetime.now(UTC) + outcomes_domain.OBSERVED_AT_MAX_FUTURE_SKEW:
+            raise ValueError("observed_at cannot be more than five minutes in the future")
+        return normalized
+
+
+class HealthActionOutcomeSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    action_id: uuid.UUID
+    note: str
+    observed_at: datetime
+    created_at: datetime

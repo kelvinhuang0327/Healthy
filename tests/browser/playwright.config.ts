@@ -11,6 +11,7 @@ export default defineConfig({
     "health_metrics.spec.ts",
     "symptom_logs.spec.ts",
     "health_actions.spec.ts",
+    "health_assistant_today.spec.ts",
   ],
   fullyParallel: false,
   workers: 1,

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   api,
+  type AssistantToday,
   type HealthAction,
   type HealthMetric,
   type Person,
@@ -19,6 +20,9 @@ export default function Home() {
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [symptomLogs, setSymptomLogs] = useState<SymptomLog[]>([]);
   const [healthActions, setHealthActions] = useState<HealthAction[]>([]);
+  const [assistantToday, setAssistantToday] = useState<AssistantToday | null>(
+    null,
+  );
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -37,6 +41,7 @@ export default function Home() {
       setMetrics([]);
       setSymptomLogs([]);
       setHealthActions([]);
+      setAssistantToday(null);
     }
   }
 
@@ -67,12 +72,14 @@ export default function Home() {
       api.healthMetrics(effectiveSelectedPersonId),
       api.symptomLogs(effectiveSelectedPersonId),
       api.healthActions(effectiveSelectedPersonId),
+      api.assistantToday(effectiveSelectedPersonId),
     ])
-      .then(([metricRows, symptomRows, actionRows]) => {
+      .then(([metricRows, symptomRows, actionRows, today]) => {
         if (!cancelled) {
           setMetrics(metricRows);
           setSymptomLogs(symptomRows);
           setHealthActions(actionRows);
+          setAssistantToday(today);
         }
       })
       .catch(() => {
@@ -80,12 +87,27 @@ export default function Home() {
           setMetrics([]);
           setSymptomLogs([]);
           setHealthActions([]);
+          setAssistantToday(null);
         }
       });
     return () => {
       cancelled = true;
     };
   }, [effectiveSelectedPersonId]);
+
+  async function refreshAssistantToday() {
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      setAssistantToday(await api.assistantToday(personId));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not refresh Today",
+      );
+    }
+  }
 
   async function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -149,6 +171,7 @@ export default function Home() {
       setMetrics([]);
       setSymptomLogs([]);
       setHealthActions([]);
+      setAssistantToday(null);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Logout failed");
@@ -190,6 +213,7 @@ export default function Home() {
       formElement.reset();
       const rows = await api.healthMetrics(personId);
       setMetrics(rows);
+      await refreshAssistantToday();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Metric entry failed",
@@ -218,6 +242,7 @@ export default function Home() {
       });
       formElement.reset();
       setSymptomLogs(await api.symptomLogs(personId));
+      await refreshAssistantToday();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Symptom entry failed",
@@ -244,6 +269,7 @@ export default function Home() {
       });
       formElement.reset();
       setHealthActions(await api.healthActions(personId));
+      await refreshAssistantToday();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Action creation failed",
@@ -260,9 +286,40 @@ export default function Home() {
     try {
       await api.completeHealthAction(personId, actionId);
       setHealthActions(await api.healthActions(personId));
+      await refreshAssistantToday();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Action completion failed",
+      );
+    }
+  }
+
+  async function createHealthActionOutcome(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const actionId = String(form.get("action_id") ?? "");
+    const observedAtLocal = String(form.get("observed_at") ?? "");
+    if (!actionId) {
+      return;
+    }
+    try {
+      await api.createHealthActionOutcome(personId, actionId, {
+        note: String(form.get("note") ?? "").trim(),
+        observed_at: observedAtLocal
+          ? new Date(observedAtLocal).toISOString()
+          : new Date().toISOString(),
+      });
+      formElement.reset();
+      await refreshAssistantToday();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Outcome entry failed",
       );
     }
   }
@@ -452,6 +509,35 @@ export default function Home() {
             </article>
           ) : null}
 
+          {selectedPerson && healthActions.some((action) => action.status === "done") ? (
+            <article className="card">
+              <h2>Record an outcome for {selectedPerson.display_name}</h2>
+              <form onSubmit={createHealthActionOutcome} data-testid="outcome-form">
+                <label>
+                  Action
+                  <select name="action_id" required>
+                    {healthActions
+                      .filter((action) => action.status === "done")
+                      .map((action) => (
+                        <option key={action.id} value={action.id}>
+                          {action.title}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  Observed at
+                  <input name="observed_at" type="datetime-local" />
+                </label>
+                <label>
+                  Note
+                  <input name="note" maxLength={2000} required />
+                </label>
+                <button type="submit">Save outcome</button>
+              </form>
+            </article>
+          ) : null}
+
           {selectedPerson ? (
             <article className="card">
               <h2>Log a symptom for {selectedPerson.display_name}</h2>
@@ -612,6 +698,102 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
+            </article>
+          ) : null}
+
+          {selectedPerson ? (
+            <article className="card" data-testid="today-section">
+              <div className="session">
+                <h2>Today for {selectedPerson.display_name}</h2>
+                <button
+                  className="secondary"
+                  type="button"
+                  data-testid="today-refresh-button"
+                  onClick={refreshAssistantToday}
+                >
+                  Refresh
+                </button>
+              </div>
+              {assistantToday ? (
+                <>
+                  <p>
+                    Generated{" "}
+                    <span data-testid="today-generated-at">
+                      {new Date(assistantToday.generated_at).toLocaleString()}
+                    </span>{" "}
+                    &middot; last{" "}
+                    <span data-testid="today-lookback-days">
+                      {assistantToday.lookback_days}
+                    </span>{" "}
+                    days
+                  </p>
+
+                  <h3>Latest metric</h3>
+                  {assistantToday.latest_metric ? (
+                    <p data-testid="today-latest-metric">
+                      {new Date(
+                        assistantToday.latest_metric.recorded_at,
+                      ).toLocaleString()}
+                    </p>
+                  ) : (
+                    <p data-testid="today-latest-metric-empty">
+                      No health metric recorded yet.
+                    </p>
+                  )}
+
+                  <h3>Recent symptoms</h3>
+                  <ul data-testid="today-symptom-list">
+                    {assistantToday.recent_symptoms.map((symptom) => (
+                      <li key={symptom.id} data-testid="today-symptom-card">
+                        {symptom.symptom} &middot;{" "}
+                        {new Date(symptom.occurred_at).toLocaleString()}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <h3>Open or recently completed actions</h3>
+                  <ul data-testid="today-action-list">
+                    {assistantToday.open_or_recent_actions.map((action) => (
+                      <li key={action.id} data-testid="today-action-card">
+                        {action.title} &middot; {action.status}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <h3>Recent outcomes</h3>
+                  <ul data-testid="today-outcome-list">
+                    {assistantToday.recent_outcomes.map((outcome) => (
+                      <li key={outcome.id} data-testid="today-outcome-card">
+                        {outcome.note} &middot;{" "}
+                        {new Date(outcome.observed_at).toLocaleString()}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <h3>Daily Attention Guidance</h3>
+                  <ul data-testid="daily-attention-list">
+                    {assistantToday.daily_attention.map((item) => (
+                      <li
+                        key={item.kind}
+                        data-testid="daily-attention-item"
+                        data-attention-kind={item.kind}
+                        data-attention-confidence={item.confidence}
+                      >
+                        <strong>{item.title}</strong>
+                        <p>{item.rationale}</p>
+                        <span>Confidence: {item.confidence}</span>
+                        <p>{item.limitations}</p>
+                        <span data-testid="daily-attention-evidence-count">
+                          {item.evidence_ids.length}
+                        </span>{" "}
+                        evidence record(s) &middot; rule {item.rule_version}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p>Loading today&apos;s view&hellip;</p>
+              )}
             </article>
           ) : null}
         </section>

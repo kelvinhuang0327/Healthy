@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -22,6 +23,8 @@ from healthy.presentation.dependencies import (
 from healthy.presentation.schemas import (
     AccountCreate,
     AccountSummary,
+    AssistantTodaySummary,
+    DailyAttentionItemSummary,
     HealthActionCreate,
     HealthActionOutcomeCreate,
     HealthActionOutcomeSummary,
@@ -582,3 +585,55 @@ def get_health_action_outcome(
             detail="Outcome not found",
         )
     return HealthActionOutcomeSummary.model_validate(outcome)
+
+
+@router.get(
+    "/persons/{person_id}/assistant/today",
+    response_model=AssistantTodaySummary,
+)
+def get_assistant_today(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> AssistantTodaySummary:
+    result = services.get_assistant_today(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        now=datetime.now(UTC),
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return AssistantTodaySummary(
+        generated_at=result.generated_at,
+        lookback_days=result.lookback_days,
+        latest_metric=(
+            HealthMetricSummary.model_validate(result.latest_metric)
+            if result.latest_metric is not None
+            else None
+        ),
+        recent_symptoms=[
+            SymptomLogSummary.model_validate(symptom) for symptom in result.recent_symptoms
+        ],
+        open_or_recent_actions=[
+            HealthActionSummary.model_validate(action) for action in result.actions
+        ],
+        recent_outcomes=[
+            HealthActionOutcomeSummary.model_validate(outcome) for outcome in result.recent_outcomes
+        ],
+        daily_attention=[
+            DailyAttentionItemSummary(
+                kind=item.kind,
+                title=item.title,
+                rationale=item.rationale,
+                evidence_ids=list(item.evidence_ids),
+                confidence=item.confidence,
+                limitations=item.limitations,
+                rule_version=item.rule_version,
+            )
+            for item in result.daily_attention
+        ],
+    )

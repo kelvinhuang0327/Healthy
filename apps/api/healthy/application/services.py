@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from healthy.domain import actions as actions_domain
+from healthy.domain import assistant as assistant_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
 from healthy.infrastructure.models import (
@@ -76,6 +77,17 @@ class IssuedSession:
     session: SessionRecord
     raw_token: str
     default_person: Person | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AssistantToday:
+    generated_at: datetime
+    lookback_days: int
+    latest_metric: HealthMetric | None
+    recent_symptoms: list[SymptomLog]
+    actions: list[HealthAction]
+    recent_outcomes: list[HealthActionOutcome]
+    daily_attention: tuple[assistant_domain.DailyAttentionItem, ...]
 
 
 def _session_record(account_id: uuid.UUID, max_age_seconds: int) -> tuple[SessionRecord, str]:
@@ -448,4 +460,92 @@ def get_health_action_outcome(
         database_session,
         action.id,
         outcome_id,
+    )
+
+
+def get_assistant_today(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    now: datetime,
+    lookback: timedelta = assistant_domain.DEFAULT_LOOKBACK,
+) -> AssistantToday | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    since = now - lookback
+
+    latest_metric = HealthMetricRepository.get_latest_for_person(database_session, person.id)
+    recent_symptoms = SymptomLogRepository.list_since_for_person(database_session, person.id, since)
+    actions = HealthActionRepository.list_open_or_recently_completed_for_person(
+        database_session,
+        person.id,
+        since,
+    )
+    recent_outcomes = HealthActionOutcomeRepository.list_since_for_person(
+        database_session,
+        person.id,
+        since,
+    )
+    open_actions = [
+        action for action in actions if action.status == actions_domain.HealthActionStatus.TODO
+    ]
+    metric_is_recent = latest_metric is not None and latest_metric.recorded_at >= since
+
+    daily_attention = assistant_domain.evaluate_daily_attention(
+        now=now,
+        lookback=lookback,
+        all_time_metric_count=HealthMetricRepository.count_for_person(database_session, person.id),
+        all_time_symptom_count=SymptomLogRepository.count_for_person(database_session, person.id),
+        all_time_action_count=HealthActionRepository.count_for_person(database_session, person.id),
+        all_time_outcome_count=HealthActionOutcomeRepository.count_for_person(
+            database_session,
+            person.id,
+        ),
+        recent_metrics=(
+            [
+                assistant_domain.MetricSnapshot(
+                    id=latest_metric.id, recorded_at=latest_metric.recorded_at
+                )
+            ]
+            if metric_is_recent and latest_metric is not None
+            else []
+        ),
+        recent_symptoms=[
+            assistant_domain.SymptomSnapshot(
+                id=symptom.id,
+                symptom=symptom.symptom,
+                occurred_at=symptom.occurred_at,
+            )
+            for symptom in recent_symptoms
+        ],
+        open_actions=[
+            assistant_domain.ActionSnapshot(
+                id=action.id,
+                title=action.title,
+                status=actions_domain.HealthActionStatus(action.status),
+                due_at=action.due_at,
+                completed_at=action.completed_at,
+            )
+            for action in open_actions
+        ],
+        recent_outcomes=[
+            assistant_domain.OutcomeSnapshot(
+                id=outcome.id,
+                action_id=outcome.action_id,
+                observed_at=outcome.observed_at,
+            )
+            for outcome in recent_outcomes
+        ],
+    )
+
+    return AssistantToday(
+        generated_at=now,
+        lookback_days=lookback.days,
+        latest_metric=latest_metric,
+        recent_symptoms=recent_symptoms,
+        actions=actions,
+        recent_outcomes=recent_outcomes,
+        daily_attention=daily_attention,
     )

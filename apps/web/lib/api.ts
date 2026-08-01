@@ -63,6 +63,34 @@ export type HealthAction = {
   updated_at: string;
 };
 
+export type HealthActionOutcome = {
+  id: string;
+  action_id: string;
+  note: string;
+  observed_at: string;
+  created_at: string;
+};
+
+export type DailyAttentionItem = {
+  kind: string;
+  title: string;
+  rationale: string;
+  evidence_ids: string[];
+  confidence: "low" | "medium" | "high";
+  limitations: string;
+  rule_version: string;
+};
+
+export type AssistantToday = {
+  generated_at: string;
+  lookback_days: number;
+  latest_metric: HealthMetric | null;
+  recent_symptoms: SymptomLog[];
+  open_or_recent_actions: HealthAction[];
+  recent_outcomes: HealthActionOutcome[];
+  daily_attention: DailyAttentionItem[];
+};
+
 function csrfToken(): string {
   const row = document.cookie
     .split("; ")
@@ -187,4 +215,15 @@ export const api = {
       `/persons/${personId}/actions/${actionId}/complete`,
       { method: "POST" },
     ),
+  createHealthActionOutcome: (
+    personId: string,
+    actionId: string,
+    payload: { note: string; observed_at: string },
+  ) =>
+    request<HealthActionOutcome>(
+      `/persons/${personId}/actions/${actionId}/outcomes`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  assistantToday: (personId: string) =>
+    request<AssistantToday>(`/persons/${personId}/assistant/today`),
 };

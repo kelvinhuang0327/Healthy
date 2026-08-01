@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -281,3 +281,23 @@ class HealthActionOutcomeSummary(BaseModel):
     note: str
     observed_at: datetime
     created_at: datetime
+
+
+class DailyAttentionItemSummary(BaseModel):
+    kind: str
+    title: str
+    rationale: str
+    evidence_ids: list[uuid.UUID]
+    confidence: Literal["low", "medium", "high"]
+    limitations: str
+    rule_version: str
+
+
+class AssistantTodaySummary(BaseModel):
+    generated_at: datetime
+    lookback_days: int
+    latest_metric: HealthMetricSummary | None
+    recent_symptoms: list[SymptomLogSummary]
+    open_or_recent_actions: list[HealthActionSummary]
+    recent_outcomes: list[HealthActionOutcomeSummary]
+    daily_attention: list[DailyAttentionItemSummary]

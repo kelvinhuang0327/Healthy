@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
@@ -12,6 +13,8 @@ from healthy.infrastructure.models import (
     HealthAction,
     HealthActionOutcome,
     HealthMetric,
+    HealthReportModel,
+    HealthReportObservationModel,
     Person,
     SymptomLog,
 )
@@ -389,5 +392,130 @@ class HealthActionOutcomeRepository:
             .select_from(HealthActionOutcome)
             .join(HealthAction, HealthAction.id == HealthActionOutcome.action_id)
             .where(HealthAction.person_id == person_id)
+        )
+        return database_session.scalar(statement) or 0
+
+
+class HealthReportRepository:
+    @staticmethod
+    def find_by_sha256(
+        database_session: Session,
+        person_id: uuid.UUID,
+        canonical_sha256: str,
+    ) -> HealthReportModel | None:
+        statement = select(HealthReportModel).where(
+            HealthReportModel.person_id == person_id,
+            HealthReportModel.canonical_sha256 == canonical_sha256,
+        )
+        return database_session.scalar(statement)
+
+    @staticmethod
+    def create_report(
+        database_session: Session,
+        person_id: uuid.UUID,
+        *,
+        schema_version: str,
+        source_name: str,
+        reported_at: datetime,
+        canonical_sha256: str,
+        raw_json: str,
+        observations: list[dict[str, Any]],
+    ) -> HealthReportModel:
+        report = HealthReportModel(
+            person_id=person_id,
+            schema_version=schema_version,
+            source_name=source_name,
+            reported_at=reported_at,
+            canonical_sha256=canonical_sha256,
+            status="pending",
+            raw_json=raw_json,
+        )
+        database_session.add(report)
+        database_session.flush()
+
+        for obs_data in observations:
+            obs = HealthReportObservationModel(
+                report_id=report.id,
+                person_id=person_id,
+                code=obs_data["code"],
+                display_name=obs_data["display_name"],
+                value_numeric=obs_data.get("value_numeric"),
+                value_text=obs_data.get("value_text"),
+                unit=obs_data.get("unit"),
+                reference_range=obs_data.get("reference_range"),
+                observed_at=obs_data["observed_at"],
+            )
+            database_session.add(obs)
+
+        return report
+
+    @staticmethod
+    def list_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+    ) -> list[HealthReportModel]:
+        statement = (
+            select(HealthReportModel)
+            .where(HealthReportModel.person_id == person_id)
+            .order_by(
+                HealthReportModel.reported_at.desc(),
+                HealthReportModel.created_at.desc(),
+                HealthReportModel.id.desc(),
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def get_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        report_id: uuid.UUID,
+    ) -> HealthReportModel | None:
+        statement = select(HealthReportModel).where(
+            HealthReportModel.id == report_id,
+            HealthReportModel.person_id == person_id,
+        )
+        return database_session.scalar(statement)
+
+    @staticmethod
+    def confirm_report(
+        database_session: Session,
+        report: HealthReportModel,
+        confirmed_at: datetime,
+    ) -> HealthReportModel:
+        if report.status != "confirmed":
+            report.status = "confirmed"
+            report.confirmed_at = confirmed_at
+            database_session.add(report)
+        return report
+
+    @staticmethod
+    def list_confirmed_observations_since_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        since: datetime,
+    ) -> list[HealthReportObservationModel]:
+        statement = (
+            select(HealthReportObservationModel)
+            .join(HealthReportModel, HealthReportModel.id == HealthReportObservationModel.report_id)
+            .where(
+                HealthReportModel.person_id == person_id,
+                HealthReportModel.status == "confirmed",
+                HealthReportObservationModel.observed_at >= since,
+            )
+            .order_by(
+                HealthReportObservationModel.observed_at.desc(),
+                HealthReportObservationModel.created_at.desc(),
+                HealthReportObservationModel.id.desc(),
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def count_for_person(database_session: Session, person_id: uuid.UUID) -> int:
+        statement = (
+            select(func.count())
+            .select_from(HealthReportModel)
+            .where(HealthReportModel.person_id == person_id)
         )
         return database_session.scalar(statement) or 0

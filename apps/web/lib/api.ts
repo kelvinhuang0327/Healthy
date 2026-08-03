@@ -131,6 +131,46 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
+export type HealthReportObservation = {
+  id: string;
+  report_id: string;
+  person_id: string;
+  code: string;
+  display_name: string;
+  value_numeric: number | null;
+  value_text: string | null;
+  unit: string | null;
+  reference_range: string | null;
+  observed_at: string;
+  created_at: string;
+};
+
+export type HealthReportSummary = {
+  id: string;
+  person_id: string;
+  schema_version: string;
+  source_name: string;
+  reported_at: string;
+  canonical_sha256: string;
+  status: "pending" | "confirmed";
+  created_at: string;
+  confirmed_at: string | null;
+};
+
+export type HealthReportDetail = {
+  id: string;
+  person_id: string;
+  schema_version: string;
+  source_name: string;
+  reported_at: string;
+  canonical_sha256: string;
+  status: "pending" | "confirmed";
+  raw_json: string;
+  created_at: string;
+  confirmed_at: string | null;
+  observations: HealthReportObservation[];
+};
+
 export const api = {
   register: (payload: {
     email: string;
@@ -224,6 +264,21 @@ export const api = {
       `/persons/${personId}/actions/${actionId}/outcomes`,
       { method: "POST", body: JSON.stringify(payload) },
     ),
+  importReport: (personId: string, payload: unknown) =>
+    request<HealthReportDetail>(`/persons/${personId}/reports`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  healthReports: (personId: string) =>
+    request<HealthReportSummary[]>(`/persons/${personId}/reports`),
+  healthReport: (personId: string, reportId: string) =>
+    request<HealthReportDetail>(`/persons/${personId}/reports/${reportId}`),
+  confirmReport: (personId: string, reportId: string) =>
+    request<HealthReportDetail>(
+      `/persons/${personId}/reports/${reportId}/confirm`,
+      { method: "POST" },
+    ),
   assistantToday: (personId: string) =>
     request<AssistantToday>(`/persons/${personId}/assistant/today`),
 };
+

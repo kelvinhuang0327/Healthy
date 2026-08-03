@@ -301,3 +301,49 @@ class AssistantTodaySummary(BaseModel):
     open_or_recent_actions: list[HealthActionSummary]
     recent_outcomes: list[HealthActionOutcomeSummary]
     daily_attention: list[DailyAttentionItemSummary]
+
+
+class HealthReportObservationSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    report_id: uuid.UUID
+    person_id: uuid.UUID
+    code: str
+    display_name: str
+    value_numeric: JsonDecimal | None
+    value_text: str | None
+    unit: str | None
+    reference_range: str | None
+    observed_at: datetime
+    created_at: datetime
+
+
+class HealthReportSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    person_id: uuid.UUID
+    schema_version: str
+    source_name: str
+    reported_at: datetime
+    canonical_sha256: str
+    status: str
+    created_at: datetime
+    confirmed_at: datetime | None
+
+
+class HealthReportDetail(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    person_id: uuid.UUID
+    schema_version: str
+    source_name: str
+    reported_at: datetime
+    canonical_sha256: str
+    status: str
+    raw_json: str
+    created_at: datetime
+    confirmed_at: datetime | None
+    observations: list[HealthReportObservationSummary]

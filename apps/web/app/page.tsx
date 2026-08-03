@@ -6,6 +6,8 @@ import {
   type AssistantToday,
   type HealthAction,
   type HealthMetric,
+  type HealthReportDetail,
+  type HealthReportSummary,
   type Person,
   type SessionSummary,
   type SymptomLog,
@@ -20,6 +22,9 @@ export default function Home() {
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [symptomLogs, setSymptomLogs] = useState<SymptomLog[]>([]);
   const [healthActions, setHealthActions] = useState<HealthAction[]>([]);
+  const [healthReports, setHealthReports] = useState<HealthReportSummary[]>([]);
+  const [selectedReportDetail, setSelectedReportDetail] =
+    useState<HealthReportDetail | null>(null);
   const [assistantToday, setAssistantToday] = useState<AssistantToday | null>(
     null,
   );
@@ -41,6 +46,8 @@ export default function Home() {
       setMetrics([]);
       setSymptomLogs([]);
       setHealthActions([]);
+      setHealthReports([]);
+      setSelectedReportDetail(null);
       setAssistantToday(null);
     }
   }
@@ -72,13 +79,15 @@ export default function Home() {
       api.healthMetrics(effectiveSelectedPersonId),
       api.symptomLogs(effectiveSelectedPersonId),
       api.healthActions(effectiveSelectedPersonId),
+      api.healthReports(effectiveSelectedPersonId),
       api.assistantToday(effectiveSelectedPersonId),
     ])
-      .then(([metricRows, symptomRows, actionRows, today]) => {
+      .then(([metricRows, symptomRows, actionRows, reportRows, today]) => {
         if (!cancelled) {
           setMetrics(metricRows);
           setSymptomLogs(symptomRows);
           setHealthActions(actionRows);
+          setHealthReports(reportRows);
           setAssistantToday(today);
         }
       })
@@ -87,6 +96,8 @@ export default function Home() {
           setMetrics([]);
           setSymptomLogs([]);
           setHealthActions([]);
+          setHealthReports([]);
+          setSelectedReportDetail(null);
           setAssistantToday(null);
         }
       });
@@ -94,6 +105,7 @@ export default function Home() {
       cancelled = true;
     };
   }, [effectiveSelectedPersonId]);
+
 
   async function refreshAssistantToday() {
     const personId = selectedPerson?.id;
@@ -324,7 +336,65 @@ export default function Home() {
     }
   }
 
+  async function importHealthReport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const rawJson = String(form.get("report_json") ?? "").trim();
+    try {
+      const parsedPayload = JSON.parse(rawJson);
+      const reportDetail = await api.importReport(personId, parsedPayload);
+      formElement.reset();
+      setSelectedReportDetail(reportDetail);
+      setHealthReports(await api.healthReports(personId));
+      await refreshAssistantToday();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Report import failed",
+      );
+    }
+  }
+
+  async function confirmHealthReport(reportId: string) {
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      const confirmed = await api.confirmReport(personId, reportId);
+      setSelectedReportDetail(confirmed);
+      setHealthReports(await api.healthReports(personId));
+      await refreshAssistantToday();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Report confirmation failed",
+      );
+    }
+  }
+
+  async function viewHealthReport(reportId: string) {
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      setSelectedReportDetail(await api.healthReport(personId, reportId));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not fetch report details",
+      );
+    }
+  }
+
   return (
+
     <main>
       <header>
         <h1>Healthy</h1>
@@ -700,6 +770,116 @@ export default function Home() {
               </ul>
             </article>
           ) : null}
+
+          {selectedPerson ? (
+            <article className="card">
+              <h2>Import JSON health report for {selectedPerson.display_name}</h2>
+              <form onSubmit={importHealthReport} data-testid="report-import-form">
+                <label>
+                  JSON report (schema healthy.health-report.v1)
+                  <textarea
+                    name="report_json"
+                    rows={6}
+                    placeholder='{"schema_version": "healthy.health-report.v1", "source_name": "LabCorp", "reported_at": "2026-08-01T08:00:00Z", "observations": [{"code": "GLUCOSE", "display_name": "Glucose", "value_numeric": 95.5, "unit": "mg/dL"}]}'
+                    required
+                  />
+                </label>
+                <button type="submit">Import structured report</button>
+              </form>
+            </article>
+          ) : null}
+
+          {selectedPerson ? (
+            <article className="card">
+              <h2>Imported health reports for {selectedPerson.display_name}</h2>
+              <ul className="metrics" data-testid="report-list">
+                {healthReports.map((report) => (
+                  <li
+                    className="metric"
+                    key={report.id}
+                    data-testid="report-card"
+                    data-report-id={report.id}
+                    data-report-status={report.status}
+                  >
+                    <strong>{report.source_name}</strong>
+                    <span>
+                      Status: {report.status} &middot; Reported{" "}
+                      {new Date(report.reported_at).toLocaleString()}
+                    </span>
+                    <span style={{ fontSize: "0.8rem", wordBreak: "break-all" }}>
+                      SHA-256: {report.canonical_sha256}
+                    </span>
+                    <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                      <button
+                        className="secondary"
+                        type="button"
+                        onClick={() => viewHealthReport(report.id)}
+                      >
+                        View details
+                      </button>
+                      {report.status === "pending" ? (
+                        <button
+                          type="button"
+                          data-testid="confirm-report-button"
+                          onClick={() => confirmHealthReport(report.id)}
+                        >
+                          Confirm values
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {selectedReportDetail ? (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                  }}
+                  data-testid="report-detail-panel"
+                >
+                  <h3>Report details ({selectedReportDetail.source_name})</h3>
+                  <p>
+                    Status: <strong>{selectedReportDetail.status}</strong>
+                  </p>
+                  {selectedReportDetail.confirmed_at ? (
+                    <p>
+                      Confirmed at:{" "}
+                      {new Date(selectedReportDetail.confirmed_at).toLocaleString()}
+                    </p>
+                  ) : null}
+                  <h4>Observations</h4>
+                  <ul>
+                    {selectedReportDetail.observations.map((obs) => (
+                      <li key={obs.id}>
+                        <strong>{obs.display_name}</strong> ({obs.code}):{" "}
+                        {obs.value_numeric !== null
+                          ? obs.value_numeric
+                          : obs.value_text}{" "}
+                        {obs.unit ?? ""}
+                        {obs.reference_range ? (
+                          <span> [Ref: {obs.reference_range}]</span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                  {selectedReportDetail.status === "pending" ? (
+                    <button
+                      type="button"
+                      data-testid="confirm-detail-button"
+                      onClick={() => confirmHealthReport(selectedReportDetail.id)}
+                    >
+                      Confirm this report
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </article>
+          ) : null}
+
 
           {selectedPerson ? (
             <article className="card" data-testid="today-section">

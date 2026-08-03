@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from healthy.application import services
 from healthy.application.services import AuthenticatedSession
+from healthy.domain import reports as reports_domain
 from healthy.infrastructure.config import Settings
 from healthy.infrastructure.models import Person
 from healthy.presentation.dependencies import (
@@ -31,6 +32,8 @@ from healthy.presentation.schemas import (
     HealthActionSummary,
     HealthMetricCreate,
     HealthMetricSummary,
+    HealthReportDetail,
+    HealthReportSummary,
     PersonCreate,
     PersonSummary,
     RegistrationResponse,
@@ -637,3 +640,119 @@ def get_assistant_today(
             for item in result.daily_attention
         ],
     )
+
+
+@router.post(
+    "/persons/{person_id}/reports",
+    response_model=HealthReportDetail,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_origin)],
+)
+def import_health_report(
+    person_id: uuid.UUID,
+    payload: Annotated[dict[str, Any], Body(...)],
+    response: Response,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthReportDetail:
+    try:
+        result = services.import_health_report(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            raw_data=payload,
+        )
+    except reports_domain.InvalidReportSchemaError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except services.HealthReportIntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Health report data violated system integrity rules.",
+        ) from exc
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+
+    report, is_duplicate = result
+    if is_duplicate:
+        response.status_code = status.HTTP_200_OK
+
+    return HealthReportDetail.model_validate(report)
+
+
+@router.get(
+    "/persons/{person_id}/reports",
+    response_model=list[HealthReportSummary],
+)
+def list_health_reports(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> list[HealthReportSummary]:
+    reports = services.list_health_reports(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+    )
+    if reports is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return [HealthReportSummary.model_validate(report) for report in reports]
+
+
+@router.get(
+    "/persons/{person_id}/reports/{report_id}",
+    response_model=HealthReportDetail,
+)
+def get_health_report(
+    person_id: uuid.UUID,
+    report_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthReportDetail:
+    report = services.get_health_report(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        report_id=report_id,
+    )
+    if report is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found",
+        )
+    return HealthReportDetail.model_validate(report)
+
+
+@router.post(
+    "/persons/{person_id}/reports/{report_id}/confirm",
+    response_model=HealthReportDetail,
+    dependencies=[Depends(require_origin)],
+)
+def confirm_health_report(
+    person_id: uuid.UUID,
+    report_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthReportDetail:
+    report = services.confirm_health_report(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        report_id=report_id,
+        now=datetime.now(UTC),
+    )
+    if report is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found",
+        )
+    return HealthReportDetail.model_validate(report)

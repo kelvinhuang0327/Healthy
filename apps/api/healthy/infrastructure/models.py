@@ -138,6 +138,11 @@ class Person(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    health_reports: Mapped[list[HealthReportModel]] = orm_relationship(
+        back_populates="person",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class HealthMetric(Base):
@@ -364,3 +369,96 @@ class HealthActionOutcome(Base):
     )
 
     action: Mapped[HealthAction] = orm_relationship(back_populates="outcomes")
+
+
+class HealthReportModel(Base):
+    __tablename__ = "health_reports"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'confirmed')",
+            name="ck_health_reports_status",
+        ),
+        Index(
+            "uq_health_reports_person_sha256",
+            "person_id",
+            "canonical_sha256",
+            unique=True,
+        ),
+        Index(
+            "ix_health_reports_person_timeline",
+            "person_id",
+            text("reported_at DESC"),
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="CASCADE"),
+        index=True,
+    )
+    schema_version: Mapped[str] = mapped_column(String(64))
+    source_name: Mapped[str] = mapped_column(String(128))
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    canonical_sha256: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    raw_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    person: Mapped[Person] = orm_relationship(back_populates="health_reports")
+    observations: Mapped[list[HealthReportObservationModel]] = orm_relationship(
+        back_populates="report",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class HealthReportObservationModel(Base):
+    __tablename__ = "health_report_observations"
+    __table_args__ = (
+        Index(
+            "ix_health_report_observations_person_code",
+            "person_id",
+            "code",
+            text("observed_at DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    report_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("health_reports.id", ondelete="CASCADE"),
+        index=True,
+    )
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("persons.id", ondelete="CASCADE"),
+        index=True,
+    )
+    code: Mapped[str] = mapped_column(String(64))
+    display_name: Mapped[str] = mapped_column(String(128))
+    value_numeric: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    value_text: Mapped[str | None] = mapped_column(Text)
+    unit: Mapped[str | None] = mapped_column(String(32))
+    reference_range: Mapped[str | None] = mapped_column(String(128))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    report: Mapped[HealthReportModel] = orm_relationship(back_populates="observations")

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -12,12 +13,15 @@ from sqlalchemy.orm import Session
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
 from healthy.domain import outcomes as outcomes_domain
+from healthy.domain import reports as reports_domain
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
 from healthy.infrastructure.models import (
     Account,
     HealthAction,
     HealthActionOutcome,
     HealthMetric,
+    HealthReportModel,
+    HealthReportObservationModel,
     Person,
     SessionRecord,
     SymptomLog,
@@ -26,6 +30,7 @@ from healthy.infrastructure.repositories import (
     HealthActionOutcomeRepository,
     HealthActionRepository,
     HealthMetricRepository,
+    HealthReportRepository,
     PersonRepository,
     SymptomLogRepository,
 )
@@ -65,6 +70,10 @@ class HealthActionOutcomeInvalidStateError(Exception):
     pass
 
 
+class HealthReportIntegrityError(Exception):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class AuthenticatedSession:
     account: Account
@@ -88,6 +97,7 @@ class AssistantToday:
     actions: list[HealthAction]
     recent_outcomes: list[HealthActionOutcome]
     daily_attention: tuple[assistant_domain.DailyAttentionItem, ...]
+    recent_confirmed_observations: list[HealthReportObservationModel] = field(default_factory=list)
 
 
 def _session_record(account_id: uuid.UUID, max_age_seconds: int) -> tuple[SessionRecord, str]:
@@ -488,6 +498,11 @@ def get_assistant_today(
         person.id,
         since,
     )
+    recent_confirmed_obs = HealthReportRepository.list_confirmed_observations_since_for_person(
+        database_session,
+        person.id,
+        since,
+    )
     open_actions = [
         action for action in actions if action.status == actions_domain.HealthActionStatus.TODO
     ]
@@ -503,6 +518,7 @@ def get_assistant_today(
             database_session,
             person.id,
         ),
+        all_time_report_count=HealthReportRepository.count_for_person(database_session, person.id),
         recent_metrics=(
             [
                 assistant_domain.MetricSnapshot(
@@ -538,6 +554,16 @@ def get_assistant_today(
             )
             for outcome in recent_outcomes
         ],
+        recent_confirmed_observations=[
+            assistant_domain.ReportObservationSnapshot(
+                id=obs.id,
+                report_id=obs.report_id,
+                code=obs.code,
+                display_name=obs.display_name,
+                observed_at=obs.observed_at,
+            )
+            for obs in recent_confirmed_obs
+        ],
     )
 
     return AssistantToday(
@@ -548,4 +574,101 @@ def get_assistant_today(
         actions=actions,
         recent_outcomes=recent_outcomes,
         daily_attention=daily_attention,
+        recent_confirmed_observations=recent_confirmed_obs,
     )
+
+
+def import_health_report(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    raw_data: Any,
+) -> tuple[HealthReportModel, bool] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+
+    canonical_dict, canonical_json_str, sha256_hash = (
+        reports_domain.canonicalize_and_validate_report_json(raw_data)
+    )
+
+    existing = HealthReportRepository.find_by_sha256(database_session, person.id, sha256_hash)
+    if existing is not None:
+        return existing, True
+
+    try:
+        obs_data_list = []
+        for obs in canonical_dict["observations"]:
+            obs_data_list.append(
+                {
+                    "code": obs["code"],
+                    "display_name": obs["display_name"],
+                    "value_numeric": obs.get("value_numeric"),
+                    "value_text": obs.get("value_text"),
+                    "unit": obs.get("unit"),
+                    "reference_range": obs.get("reference_range"),
+                    "observed_at": datetime.fromisoformat(obs["observed_at"]),
+                }
+            )
+        report = HealthReportRepository.create_report(
+            database_session,
+            person.id,
+            schema_version=canonical_dict["schema_version"],
+            source_name=canonical_dict["source_name"],
+            reported_at=datetime.fromisoformat(canonical_dict["reported_at"]),
+            canonical_sha256=sha256_hash,
+            raw_json=canonical_json_str,
+            observations=obs_data_list,
+        )
+        database_session.commit()
+        return report, False
+    except IntegrityError as exc:
+        database_session.rollback()
+        raise HealthReportIntegrityError(
+            "Failed to store health report due to database integrity constraints."
+        ) from exc
+
+
+def list_health_reports(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+) -> list[HealthReportModel] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    return HealthReportRepository.list_for_person(database_session, person.id)
+
+
+def get_health_report(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    report_id: uuid.UUID,
+) -> HealthReportModel | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    return HealthReportRepository.get_for_person(database_session, person.id, report_id)
+
+
+def confirm_health_report(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    report_id: uuid.UUID,
+    now: datetime,
+) -> HealthReportModel | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    report = HealthReportRepository.get_for_person(database_session, person.id, report_id)
+    if report is None:
+        return None
+    confirmed_report = HealthReportRepository.confirm_report(database_session, report, now)
+    database_session.commit()
+    return confirmed_report

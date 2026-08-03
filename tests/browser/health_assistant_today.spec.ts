@@ -47,12 +47,16 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
     "insufficient_data",
   );
 
+  const recentDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 16);
   const symptomForm = page.getByTestId("symptom-form");
   await symptomForm.getByLabel("Symptom").fill("Backdated headache");
   await symptomForm
     .locator('input[name="occurred_at"]')
-    .fill("2026-07-20T09:30");
+    .fill(recentDate);
   await symptomForm.getByLabel("Severity (1-5)").fill("3");
+
   await symptomForm.getByRole("button", { name: "Save symptom" }).click();
   await expect(page.getByTestId("symptom-list").getByTestId("symptom-card")).toHaveCount(1);
 

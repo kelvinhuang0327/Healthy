@@ -44,6 +44,15 @@ class OutcomeSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class ReportObservationSnapshot:
+    id: uuid.UUID
+    report_id: uuid.UUID
+    code: str
+    display_name: str
+    observed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class DailyAttentionItem:
     kind: str
     title: str
@@ -98,24 +107,29 @@ def evaluate_daily_attention(
     all_time_symptom_count: int,
     all_time_action_count: int,
     all_time_outcome_count: int,
+    all_time_report_count: int = 0,
     recent_metrics: list[MetricSnapshot],
     recent_symptoms: list[SymptomSnapshot],
     open_actions: list[ActionSnapshot],
     recent_outcomes: list[OutcomeSnapshot],
+    recent_confirmed_observations: list[ReportObservationSnapshot] | None = None,
 ) -> tuple[DailyAttentionItem, ...]:
     """Pure, deterministic Daily Attention Guidance over already-loaded Person records."""
+    confirmed_obs = recent_confirmed_observations or []
+
     if (
         all_time_metric_count == 0
         and all_time_symptom_count == 0
         and all_time_action_count == 0
         and all_time_outcome_count == 0
+        and all_time_report_count == 0
     ):
         return (
             DailyAttentionItem(
                 kind="insufficient_data",
                 title="Not enough data yet",
                 rationale=(
-                    "No health metrics, symptoms, actions, or outcomes have been "
+                    "No health metrics, symptoms, actions, outcomes, or reports have been "
                     "recorded for this Person."
                 ),
                 evidence_ids=(),
@@ -127,6 +141,27 @@ def evaluate_daily_attention(
 
     lookback_days = lookback.days
     items: list[DailyAttentionItem] = []
+
+    if confirmed_obs:
+        most_recent_obs = confirmed_obs[0]
+        items.append(
+            DailyAttentionItem(
+                kind="recent_report_imported",
+                title="Recent confirmed health report",
+                rationale=(
+                    f"{len(confirmed_obs)} confirmed report observation(s) recorded in the "
+                    f"last {lookback_days} day(s); most recent: '{most_recent_obs.display_name}' "
+                    f"on {most_recent_obs.observed_at.isoformat()}."
+                ),
+                evidence_ids=tuple(o.id for o in confirmed_obs[:EVIDENCE_CAP]),
+                confidence="medium",
+                limitations=(
+                    "Report observations confirmed by user; non-clinical observation summary, "
+                    "not a medical diagnosis or treatment interpretation."
+                ),
+                rule_version=RULE_VERSION,
+            )
+        )
 
     if recent_symptoms:
         most_recent = recent_symptoms[0]

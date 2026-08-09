@@ -263,6 +263,8 @@ def test_full_source_payload_not_retained(client: TestClient) -> None:
         assert "payload" not in columns
         assert "source_json" not in columns
 
-        obs_models = session.query(HealthReportObservationModel).filter_by(report_id=report_id).all()
+        obs_models = (
+            session.query(HealthReportObservationModel).filter_by(report_id=report_id).all()
+        )
         for obs in obs_models:
             assert "SECRET_PAYLOAD_CONTENT_DO_NOT_RETAIN_12345" not in (obs.value_text or "")

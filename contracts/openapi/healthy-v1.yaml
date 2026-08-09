@@ -373,6 +373,81 @@
         "title": "HealthActionSummary",
         "type": "object"
       },
+      "HealthHistoryItemSummary": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "symptom",
+              "metric",
+              "report_observation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "primary_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Value"
+          },
+          "source": {
+            "$ref": "#/components/schemas/HistorySourceSummary"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "occurred_at",
+          "title",
+          "primary_value",
+          "unit",
+          "detail",
+          "source"
+        ],
+        "title": "HealthHistoryItemSummary",
+        "type": "object"
+      },
       "HealthMetricCreate": {
         "properties": {
           "blood_glucose_mg_dl": {
@@ -796,6 +871,53 @@
           "confirmed_at"
         ],
         "title": "HealthReportSummary",
+        "type": "object"
+      },
+      "HistorySourceSummary": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "report_source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Source Name"
+          },
+          "type": {
+            "enum": [
+              "symptom",
+              "metric",
+              "report_observation"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "HistorySourceSummary",
         "type": "object"
       },
       "PersonCreate": {
@@ -1837,6 +1959,55 @@
           }
         ],
         "summary": "Get Assistant Today"
+      }
+    },
+    "/v1/persons/{person_id}/history": {
+      "get": {
+        "operationId": "get_health_history_v1_persons__person_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HealthHistoryItemSummary"
+                  },
+                  "title": "Response Get Health History V1 Persons  Person Id  History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Health History"
       }
     },
     "/v1/persons/{person_id}/metrics": {

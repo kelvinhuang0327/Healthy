@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from healthy.application.history import HistoryItem, build_history
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
 from healthy.domain import outcomes as outcomes_domain
@@ -575,6 +576,25 @@ def get_assistant_today(
         recent_outcomes=recent_outcomes,
         daily_attention=daily_attention,
         recent_confirmed_observations=recent_confirmed_obs,
+    )
+
+
+def get_health_history(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+) -> list[HistoryItem] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    return build_history(
+        HealthMetricRepository.list_for_person(database_session, person.id),
+        SymptomLogRepository.list_for_person(database_session, person.id),
+        HealthReportRepository.list_confirmed_observations_for_person(
+            database_session,
+            person.id,
+        ),
     )
 
 

@@ -303,6 +303,24 @@ class AssistantTodaySummary(BaseModel):
     daily_attention: list[DailyAttentionItemSummary]
 
 
+class HistorySourceSummary(BaseModel):
+    type: Literal["symptom", "metric", "report_observation"]
+    id: uuid.UUID
+    report_id: uuid.UUID | None = None
+    report_source_name: str | None = None
+
+
+class HealthHistoryItemSummary(BaseModel):
+    id: uuid.UUID
+    kind: Literal["symptom", "metric", "report_observation"]
+    occurred_at: datetime
+    title: str
+    primary_value: str | None
+    unit: str | None
+    detail: str | None
+    source: HistorySourceSummary
+
+
 class HealthReportObservationSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

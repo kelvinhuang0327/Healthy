@@ -33,6 +33,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/persons/{person_id}/reports/{report_id}",
         "/v1/persons/{person_id}/reports/{report_id}/confirm",
         "/v1/persons/{person_id}/assistant/today",
+        "/v1/persons/{person_id}/history",
     }
     operations = {
         (method.upper(), path)
@@ -69,6 +70,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("GET", "/v1/persons/{person_id}/reports/{report_id}"),
         ("POST", "/v1/persons/{person_id}/reports/{report_id}/confirm"),
         ("GET", "/v1/persons/{person_id}/assistant/today"),
+        ("GET", "/v1/persons/{person_id}/history"),
     }
 
     security_schemes = document["components"]["securitySchemes"]

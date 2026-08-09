@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from healthy.domain.actions import HealthActionStatus
@@ -108,6 +108,32 @@ class HealthMetricRepository:
         )
         return database_session.scalar(statement)
 
+    @staticmethod
+    def get_latest_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+    ) -> HealthMetric | None:
+        statement = (
+            select(HealthMetric)
+            .where(HealthMetric.person_id == person_id)
+            .order_by(
+                HealthMetric.recorded_at.desc(),
+                HealthMetric.created_at.desc(),
+                HealthMetric.id.desc(),
+            )
+            .limit(1)
+        )
+        return database_session.scalar(statement)
+
+    @staticmethod
+    def count_for_person(database_session: Session, person_id: uuid.UUID) -> int:
+        statement = (
+            select(func.count())
+            .select_from(HealthMetric)
+            .where(HealthMetric.person_id == person_id)
+        )
+        return database_session.scalar(statement) or 0
+
 
 class SymptomLogRepository:
     @staticmethod
@@ -156,6 +182,33 @@ class SymptomLogRepository:
             SymptomLog.person_id == person_id,
         )
         return database_session.scalar(statement)
+
+    @staticmethod
+    def list_since_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        since: datetime,
+    ) -> list[SymptomLog]:
+        statement = (
+            select(SymptomLog)
+            .where(
+                SymptomLog.person_id == person_id,
+                SymptomLog.occurred_at >= since,
+            )
+            .order_by(
+                SymptomLog.occurred_at.desc(),
+                SymptomLog.created_at.desc(),
+                SymptomLog.id.desc(),
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def count_for_person(database_session: Session, person_id: uuid.UUID) -> int:
+        statement = (
+            select(func.count()).select_from(SymptomLog).where(SymptomLog.person_id == person_id)
+        )
+        return database_session.scalar(statement) or 0
 
 
 class HealthActionRepository:
@@ -229,6 +282,39 @@ class HealthActionRepository:
             return transitioned
         return cls.get_for_person(database_session, person_id, action_id)
 
+    @staticmethod
+    def list_open_or_recently_completed_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        since: datetime,
+    ) -> list[HealthAction]:
+        statement = (
+            select(HealthAction)
+            .where(
+                HealthAction.person_id == person_id,
+                (HealthAction.status == HealthActionStatus.TODO)
+                | (
+                    (HealthAction.status == HealthActionStatus.DONE)
+                    & (HealthAction.completed_at.is_not(None))
+                    & (HealthAction.completed_at >= since)
+                ),
+            )
+            .order_by(
+                HealthAction.created_at.desc(),
+                HealthAction.id.desc(),
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def count_for_person(database_session: Session, person_id: uuid.UUID) -> int:
+        statement = (
+            select(func.count())
+            .select_from(HealthAction)
+            .where(HealthAction.person_id == person_id)
+        )
+        return database_session.scalar(statement) or 0
+
 
 class HealthActionOutcomeRepository:
     @staticmethod
@@ -274,3 +360,34 @@ class HealthActionOutcomeRepository:
             HealthActionOutcome.action_id == action_id,
         )
         return database_session.scalar(statement)
+
+    @staticmethod
+    def list_since_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        since: datetime,
+    ) -> list[HealthActionOutcome]:
+        statement = (
+            select(HealthActionOutcome)
+            .join(HealthAction, HealthAction.id == HealthActionOutcome.action_id)
+            .where(
+                HealthAction.person_id == person_id,
+                HealthActionOutcome.observed_at >= since,
+            )
+            .order_by(
+                HealthActionOutcome.observed_at.desc(),
+                HealthActionOutcome.created_at.desc(),
+                HealthActionOutcome.id.desc(),
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def count_for_person(database_session: Session, person_id: uuid.UUID) -> int:
+        statement = (
+            select(func.count())
+            .select_from(HealthActionOutcome)
+            .join(HealthAction, HealthAction.id == HealthActionOutcome.action_id)
+            .where(HealthAction.person_id == person_id)
+        )
+        return database_session.scalar(statement) or 0

@@ -60,6 +60,120 @@
         "title": "AccountSummary",
         "type": "object"
       },
+      "AssistantTodaySummary": {
+        "properties": {
+          "daily_attention": {
+            "items": {
+              "$ref": "#/components/schemas/DailyAttentionItemSummary"
+            },
+            "title": "Daily Attention",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "latest_metric": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HealthMetricSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lookback_days": {
+            "title": "Lookback Days",
+            "type": "integer"
+          },
+          "open_or_recent_actions": {
+            "items": {
+              "$ref": "#/components/schemas/HealthActionSummary"
+            },
+            "title": "Open Or Recent Actions",
+            "type": "array"
+          },
+          "recent_outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/HealthActionOutcomeSummary"
+            },
+            "title": "Recent Outcomes",
+            "type": "array"
+          },
+          "recent_symptoms": {
+            "items": {
+              "$ref": "#/components/schemas/SymptomLogSummary"
+            },
+            "title": "Recent Symptoms",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "lookback_days",
+          "latest_metric",
+          "recent_symptoms",
+          "open_or_recent_actions",
+          "recent_outcomes",
+          "daily_attention"
+        ],
+        "title": "AssistantTodaySummary",
+        "type": "object"
+      },
+      "DailyAttentionItemSummary": {
+        "properties": {
+          "confidence": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "evidence_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "limitations": {
+            "title": "Limitations",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "rationale",
+          "evidence_ids",
+          "confidence",
+          "limitations",
+          "rule_version"
+        ],
+        "title": "DailyAttentionItemSummary",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1444,6 +1558,51 @@
           }
         ],
         "summary": "Get Health Action Outcome"
+      }
+    },
+    "/v1/persons/{person_id}/assistant/today": {
+      "get": {
+        "operationId": "get_assistant_today_v1_persons__person_id__assistant_today_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantTodaySummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Assistant Today"
       }
     },
     "/v1/persons/{person_id}/metrics": {

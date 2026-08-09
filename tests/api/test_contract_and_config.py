@@ -29,6 +29,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/persons/{person_id}/actions/{action_id}/complete",
         "/v1/persons/{person_id}/actions/{action_id}/outcomes",
         "/v1/persons/{person_id}/actions/{action_id}/outcomes/{outcome_id}",
+        "/v1/persons/{person_id}/assistant/today",
     }
     operations = {
         (method.upper(), path)
@@ -60,6 +61,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
             "GET",
             "/v1/persons/{person_id}/actions/{action_id}/outcomes/{outcome_id}",
         ),
+        ("GET", "/v1/persons/{person_id}/assistant/today"),
     }
     security_schemes = document["components"]["securitySchemes"]
     assert security_schemes == {

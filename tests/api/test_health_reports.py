@@ -253,16 +253,16 @@ def test_full_source_payload_not_retained(client: TestClient) -> None:
     from healthy.infrastructure.models import HealthReportModel, HealthReportObservationModel
 
     database = client.app.state.database
-    session = next(database.sessions())
-    db_report = session.get(HealthReportModel, report_id)
-    assert db_report is not None
-    assert not hasattr(db_report, "raw_json")
+    with next(database.sessions()) as session:
+        db_report = session.get(HealthReportModel, report_id)
+        assert db_report is not None
+        assert not hasattr(db_report, "raw_json")
 
-    columns = [c.name for c in HealthReportModel.__table__.columns]
-    assert "raw_json" not in columns
-    assert "payload" not in columns
-    assert "source_json" not in columns
+        columns = [c.name for c in HealthReportModel.__table__.columns]
+        assert "raw_json" not in columns
+        assert "payload" not in columns
+        assert "source_json" not in columns
 
-    obs_models = session.query(HealthReportObservationModel).filter_by(report_id=report_id).all()
-    for obs in obs_models:
-        assert "SECRET_PAYLOAD_CONTENT_DO_NOT_RETAIN_12345" not in (obs.value_text or "")
+        obs_models = session.query(HealthReportObservationModel).filter_by(report_id=report_id).all()
+        for obs in obs_models:
+            assert "SECRET_PAYLOAD_CONTENT_DO_NOT_RETAIN_12345" not in (obs.value_text or "")

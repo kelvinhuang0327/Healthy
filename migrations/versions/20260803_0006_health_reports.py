@@ -22,7 +22,6 @@ def upgrade() -> None:
         sa.Column("reported_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("canonical_sha256", sa.String(length=64), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
-        sa.Column("raw_json", sa.Text(), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

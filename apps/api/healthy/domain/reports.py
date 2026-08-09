@@ -40,7 +40,6 @@ class HealthReport:
     reported_at: datetime
     canonical_sha256: str
     status: HealthReportStatus
-    raw_json: str
     created_at: datetime
     confirmed_at: datetime | None
     observations: tuple[HealthReportObservation, ...]
@@ -68,9 +67,9 @@ def format_canonical_datetime(dt: datetime) -> str:
     return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def canonicalize_and_validate_report_json(data: Any) -> tuple[dict[str, Any], str, str]:
-    """Validates healthy.health-report.v1 schema and produces canonical dict,
-    canonical JSON string, and SHA-256 hash."""
+def canonicalize_and_validate_report_json(data: Any) -> tuple[dict[str, Any], str]:
+    """Validates healthy.health-report.v1 schema and produces canonical dict
+    and SHA-256 hash."""
     if not isinstance(data, dict):
         raise InvalidReportSchemaError("Report payload must be a JSON object.")
 
@@ -227,4 +226,4 @@ def canonicalize_and_validate_report_json(data: Any) -> tuple[dict[str, Any], st
     canonical_json_str = json.dumps(canonical_dict, sort_keys=True, separators=(",", ":"))
     sha256_hash = hashlib.sha256(canonical_json_str.encode("utf-8")).hexdigest()
 
-    return canonical_dict, canonical_json_str, sha256_hash
+    return canonical_dict, sha256_hash

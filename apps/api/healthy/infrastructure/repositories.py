@@ -418,7 +418,6 @@ class HealthReportRepository:
         source_name: str,
         reported_at: datetime,
         canonical_sha256: str,
-        raw_json: str,
         observations: list[dict[str, Any]],
     ) -> HealthReportModel:
         report = HealthReportModel(
@@ -428,7 +427,6 @@ class HealthReportRepository:
             reported_at=reported_at,
             canonical_sha256=canonical_sha256,
             status="pending",
-            raw_json=raw_json,
         )
         database_session.add(report)
         database_session.flush()

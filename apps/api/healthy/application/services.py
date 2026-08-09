@@ -589,9 +589,7 @@ def import_health_report(
     if person is None:
         return None
 
-    canonical_dict, canonical_json_str, sha256_hash = (
-        reports_domain.canonicalize_and_validate_report_json(raw_data)
-    )
+    canonical_dict, sha256_hash = reports_domain.canonicalize_and_validate_report_json(raw_data)
 
     existing = HealthReportRepository.find_by_sha256(database_session, person.id, sha256_hash)
     if existing is not None:
@@ -618,7 +616,6 @@ def import_health_report(
             source_name=canonical_dict["source_name"],
             reported_at=datetime.fromisoformat(canonical_dict["reported_at"]),
             canonical_sha256=sha256_hash,
-            raw_json=canonical_json_str,
             observations=obs_data_list,
         )
         database_session.commit()

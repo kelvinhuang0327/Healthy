@@ -165,7 +165,6 @@ export type HealthReportDetail = {
   reported_at: string;
   canonical_sha256: string;
   status: "pending" | "confirmed";
-  raw_json: string;
   created_at: string;
   confirmed_at: string | null;
   observations: HealthReportObservation[];

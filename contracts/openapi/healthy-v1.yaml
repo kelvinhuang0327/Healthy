@@ -604,10 +604,6 @@
             "title": "Person Id",
             "type": "string"
           },
-          "raw_json": {
-            "title": "Raw Json",
-            "type": "string"
-          },
           "reported_at": {
             "format": "date-time",
             "title": "Reported At",
@@ -634,7 +630,6 @@
           "reported_at",
           "canonical_sha256",
           "status",
-          "raw_json",
           "created_at",
           "confirmed_at",
           "observations"

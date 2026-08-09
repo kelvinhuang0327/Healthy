@@ -343,7 +343,6 @@ class HealthReportDetail(BaseModel):
     reported_at: datetime
     canonical_sha256: str
     status: str
-    raw_json: str
     created_at: datetime
     confirmed_at: datetime | None
     observations: list[HealthReportObservationSummary]

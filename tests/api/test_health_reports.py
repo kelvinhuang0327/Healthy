@@ -75,7 +75,9 @@ def test_import_health_report_lifecycle_and_idempotency(client: TestClient) -> N
     # 4. Detail report -> 200 OK
     detail_resp = client.get(f"/v1/persons/{person_id}/reports/{report_id}")
     assert detail_resp.status_code == 200
-    assert detail_resp.json()["id"] == report_id
+    detail_json = detail_resp.json()
+    assert detail_json["id"] == report_id
+    assert "raw_json" not in detail_json
 
     # 5. Confirm report -> 200 OK, status='confirmed'
     confirm_resp = client.post(
@@ -222,3 +224,45 @@ def test_owner_isolation_and_404(client: TestClient) -> None:
         ).status_code
         == 404
     )
+
+
+def test_full_source_payload_not_retained(client: TestClient) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+    payload = _valid_report_payload()
+    payload["raw_untrusted_blob"] = "SECRET_PAYLOAD_CONTENT_DO_NOT_RETAIN_12345"
+
+    resp = client.post(
+        f"/v1/persons/{person_id}/reports",
+        headers=csrf_headers(client),
+        json=payload,
+    )
+    assert resp.status_code == 201
+    report_data = resp.json()
+    report_id = report_data["id"]
+
+    assert "raw_json" not in report_data
+    assert "raw_untrusted_blob" not in report_data
+
+    detail_resp = client.get(f"/v1/persons/{person_id}/reports/{report_id}")
+    assert detail_resp.status_code == 200
+    detail_data = detail_resp.json()
+    assert "raw_json" not in detail_data
+    assert "raw_untrusted_blob" not in detail_data
+
+    from healthy.infrastructure.models import HealthReportModel, HealthReportObservationModel
+
+    database = client.app.state.database
+    session = next(database.sessions())
+    db_report = session.get(HealthReportModel, report_id)
+    assert db_report is not None
+    assert not hasattr(db_report, "raw_json")
+
+    columns = [c.name for c in HealthReportModel.__table__.columns]
+    assert "raw_json" not in columns
+    assert "payload" not in columns
+    assert "source_json" not in columns
+
+    obs_models = session.query(HealthReportObservationModel).filter_by(report_id=report_id).all()
+    for obs in obs_models:
+        assert "SECRET_PAYLOAD_CONTENT_DO_NOT_RETAIN_12345" not in (obs.value_text or "")

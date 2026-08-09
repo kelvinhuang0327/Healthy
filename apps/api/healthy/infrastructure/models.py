@@ -408,7 +408,6 @@ class HealthReportModel(Base):
     reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     canonical_sha256: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32), default="pending")
-    raw_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

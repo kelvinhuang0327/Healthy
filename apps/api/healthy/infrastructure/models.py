@@ -116,6 +116,7 @@ class Person(Base):
     )
     display_name: Mapped[str] = mapped_column(String(120))
     relationship: Mapped[str] = mapped_column(String(30))
+    height_cm: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

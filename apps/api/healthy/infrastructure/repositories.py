@@ -58,6 +58,23 @@ class PersonRepository:
         database_session.add(person)
         return person
 
+    @staticmethod
+    def update_height_for_owner(
+        database_session: Session,
+        owner_account_id: uuid.UUID,
+        person_id: uuid.UUID,
+        height_cm: Decimal | None,
+    ) -> Person | None:
+        statement = select(Person).where(
+            Person.id == person_id,
+            Person.owner_account_id == owner_account_id,
+        )
+        person = database_session.scalar(statement)
+        if person is None:
+            return None
+        person.height_cm = height_cm
+        return person
+
 
 class HealthMetricRepository:
     @staticmethod

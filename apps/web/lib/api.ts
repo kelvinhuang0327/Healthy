@@ -16,6 +16,7 @@ export type Person = {
   owner_account_id: string;
   display_name: string;
   relationship: string;
+  height_cm: number | null;
   is_default: boolean;
   created_at: string;
   updated_at: string;
@@ -228,6 +229,11 @@ export const api = {
   session: () => request<SessionSummary>("/session"),
   persons: () => request<Person[]>("/persons"),
   person: (personId: string) => request<Person>(`/persons/${personId}`),
+  updatePersonHeight: (personId: string, heightCm: number | null) =>
+    request<Person>(`/persons/${personId}/profile`, {
+      method: "PATCH",
+      body: JSON.stringify({ height_cm: heightCm }),
+    }),
   createPerson: (payload: { display_name: string; relationship: string }) =>
     request<Person>("/persons", {
       method: "POST",

@@ -39,6 +39,7 @@ from healthy.presentation.schemas import (
     InsightEvidenceSummary,
     InsightSummary,
     PersonCreate,
+    PersonHeightUpdate,
     PersonSummary,
     RegistrationResponse,
     SessionCreate,
@@ -221,6 +222,27 @@ def get_person(
         database_session,
         authenticated.account.id,
         person_id,
+    )
+    if person is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return PersonSummary.model_validate(person)
+
+
+@router.patch("/persons/{person_id}/profile", response_model=PersonSummary)
+def patch_person_profile(
+    person_id: uuid.UUID,
+    payload: PersonHeightUpdate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> PersonSummary:
+    person = services.update_person_height(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        height_cm=payload.height_cm,
     )
     if person is None:
         raise HTTPException(

@@ -232,6 +232,25 @@ def create_person(
     return person
 
 
+def update_person_height(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    height_cm: Decimal | None,
+) -> Person | None:
+    person = PersonRepository.update_height_for_owner(
+        database_session,
+        owner_account_id,
+        person_id,
+        height_cm,
+    )
+    if person is None:
+        return None
+    database_session.commit()
+    return person
+
+
 def create_health_metric(
     database_session: Session,
     *,

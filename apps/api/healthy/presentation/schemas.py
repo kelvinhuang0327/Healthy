@@ -28,6 +28,11 @@ JsonDecimal = Annotated[
     WithJsonSchema({"type": "number"}),
 ]
 
+HeightCm = Annotated[
+    JsonDecimal,
+    Field(max_digits=5, decimal_places=2),
+]
+
 
 class AccountCreate(BaseModel):
     email: EmailStr
@@ -43,6 +48,19 @@ class SessionCreate(BaseModel):
 class PersonCreate(BaseModel):
     display_name: str = Field(min_length=1, max_length=120)
     relationship: PersonRelationship = PersonRelationship.FAMILY
+
+
+class PersonHeightUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    height_cm: HeightCm | None
+
+    @field_validator("height_cm")
+    @classmethod
+    def validate_height_cm(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and (not value.is_finite() or value <= 0):
+            raise ValueError("height_cm must be a finite number greater than zero")
+        return value
 
 
 class AccountSummary(BaseModel):
@@ -61,6 +79,7 @@ class PersonSummary(BaseModel):
     owner_account_id: uuid.UUID
     display_name: str
     relationship: str
+    height_cm: HeightCm | None
     is_default: bool
     created_at: datetime
     updated_at: datetime

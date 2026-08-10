@@ -28,6 +28,7 @@ export default function Home() {
   const [assistantToday, setAssistantToday] = useState<AssistantToday | null>(
     null,
   );
+  const [heightSaving, setHeightSaving] = useState(false);
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -105,6 +106,36 @@ export default function Home() {
       cancelled = true;
     };
   }, [effectiveSelectedPersonId]);
+
+  async function saveHeight(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const rawHeight = String(form.get("height_cm") ?? "").trim();
+    const heightCm = rawHeight ? Number(rawHeight) : null;
+    if (
+      heightCm !== null &&
+      (!Number.isFinite(heightCm) || heightCm <= 0)
+    ) {
+      setError("Height must be a finite number greater than zero.");
+      return;
+    }
+    setHeightSaving(true);
+    try {
+      const updated = await api.updatePersonHeight(personId, heightCm);
+      setPersons((current) =>
+        current.map((person) => (person.id === updated.id ? updated : person)),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Height update failed");
+    } finally {
+      setHeightSaving(false);
+    }
+  }
 
 
   async function refreshAssistantToday() {
@@ -527,6 +558,42 @@ export default function Home() {
               <button type="submit">Create Person</button>
             </form>
           </article>
+
+          {selectedPerson ? (
+            <article className="card" data-testid="height-profile">
+              <h2>Height for {selectedPerson.display_name}</h2>
+              {selectedPerson.height_cm == null ? (
+                <p data-testid="height-empty">No height recorded yet.</p>
+              ) : (
+                <p data-testid="height-value">
+                  Current height: {selectedPerson.height_cm} cm
+                </p>
+              )}
+              <form
+                key={`${selectedPerson.id}-${selectedPerson.height_cm ?? "empty"}`}
+                onSubmit={saveHeight}
+              >
+                <label>
+                  Height (cm)
+                  <input
+                    name="height_cm"
+                    type="number"
+                    step="0.01"
+                    defaultValue={
+                      selectedPerson.height_cm == null
+                        ? ""
+                        : String(selectedPerson.height_cm)
+                    }
+                    aria-describedby="height-help"
+                  />
+                </label>
+                <p id="height-help">Use centimeters. Leave blank to clear.</p>
+                <button type="submit" disabled={heightSaving}>
+                  {heightSaving ? "Saving height…" : "Save height"}
+                </button>
+              </form>
+            </article>
+          ) : null}
 
           {selectedPerson ? (
             <article className="card">

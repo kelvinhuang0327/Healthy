@@ -20,6 +20,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/session",
         "/v1/persons",
         "/v1/persons/{person_id}",
+        "/v1/persons/{person_id}/profile",
         "/v1/persons/{person_id}/metrics",
         "/v1/persons/{person_id}/metrics/{metric_id}",
         "/v1/persons/{person_id}/symptoms",
@@ -39,7 +40,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         (method.upper(), path)
         for path, methods in document["paths"].items()
         for method in methods
-        if method in {"get", "post", "delete"}
+        if method in {"get", "post", "patch", "delete"}
     }
     assert operations == {
         ("POST", "/v1/accounts"),
@@ -49,6 +50,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("GET", "/v1/persons"),
         ("POST", "/v1/persons"),
         ("GET", "/v1/persons/{person_id}"),
+        ("PATCH", "/v1/persons/{person_id}/profile"),
         ("POST", "/v1/persons/{person_id}/metrics"),
         ("GET", "/v1/persons/{person_id}/metrics"),
         ("GET", "/v1/persons/{person_id}/metrics/{metric_id}"),

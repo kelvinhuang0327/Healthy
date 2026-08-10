@@ -288,6 +288,7 @@ def post_health_metric(
             heart_rate_bpm=payload.heart_rate_bpm,
             weight_kg=payload.weight_kg,
             blood_glucose_mg_dl=payload.blood_glucose_mg_dl,
+            sleep_hours=payload.sleep_hours,
             note=payload.note,
         )
     except services.HealthMetricIntegrityError as error:

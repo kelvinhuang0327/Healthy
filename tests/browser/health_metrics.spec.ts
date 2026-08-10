@@ -38,11 +38,13 @@ test("selected Person can log a health metric and see it in newest-first history
   await expect(page.getByTestId("selected-person-pill")).toBeVisible();
 
   const form = page.getByTestId("metric-form");
+  await form.locator('input[name="recorded_at"]').fill("2026-08-09T08:30");
   await form.locator('input[name="systolic_bp_mm_hg"]').fill("120");
   await form.locator('input[name="diastolic_bp_mm_hg"]').fill("80");
   await form.locator('input[name="heart_rate_bpm"]').fill("72");
   await form.locator('input[name="weight_kg"]').fill("70.25");
   await form.locator('input[name="blood_glucose_mg_dl"]').fill("95.5");
+  await form.locator('input[name="sleep_hours"]').fill("7.25");
   await form.locator('input[name="note"]').fill("After breakfast");
   await form.getByRole("button", { name: "Save metric" }).click();
 
@@ -53,6 +55,8 @@ test("selected Person can log a health metric and see it in newest-first history
   await expect(firstCard).toContainText("72 bpm");
   await expect(firstCard).toContainText("70.25 kg");
   await expect(firstCard).toContainText("95.5 mg/dL");
+  await expect(firstCard).toContainText("7.25 hours");
+  await expect(firstCard).toContainText("2026");
   await expect(firstCard).toContainText("After breakfast");
 
   await form.locator('input[name="heart_rate_bpm"]').fill("65");
@@ -61,6 +65,14 @@ test("selected Person can log a health metric and see it in newest-first history
   const cards = metricList.getByTestId("metric-card");
   await expect(cards.nth(0)).toContainText("65 bpm");
   await expect(cards.nth(1)).toContainText("72 bpm");
+
+  await page.reload();
+  const reloadedMetricList = page.getByTestId("metric-list");
+  await expect(reloadedMetricList.getByTestId("metric-card")).toHaveCount(2);
+  await expect(
+    reloadedMetricList.getByTestId("metric-card").filter({ hasText: "7.25 hours" }),
+  ).toHaveCount(1);
+  await expect(reloadedMetricList).not.toContainText(/recommend|quality|target|good|poor/i);
 
   const foreignPersonStatus = await page.evaluate(async (id) => {
     const response = await fetch(`/api/v1/persons/${id}/metrics`, {

@@ -140,6 +140,7 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         person_id,
         recorded_at="2026-08-02T08:00:00Z",
         heart_rate_bpm=72,
+        sleep_hours=7.25,
     )
     pending = client.post(
         f"/v1/persons/{person_id}/reports",
@@ -197,7 +198,7 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         "report_id": None,
         "report_source_name": None,
     }
-    assert metric_item["primary_value"] == "72 bpm"
+    assert metric_item["primary_value"] == "72 bpm · 7.25 hours"
     assert metric_item["source"]["type"] == "metric"
     assert metric_item["source"]["id"] == metric.json()["id"]
     assert confirmed_detail["status"] == "confirmed"

@@ -139,6 +139,7 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "ck_health_metrics_systolic_bp_mm_hg_bounds",
         "ck_health_metrics_diastolic_bp_mm_hg_bounds",
         "ck_health_metrics_heart_rate_bpm_bounds",
+        "ck_health_metrics_steps_bounds",
         "ck_health_metrics_weight_kg_bounds",
         "ck_health_metrics_blood_glucose_mg_dl_bounds",
     }

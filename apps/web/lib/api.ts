@@ -35,6 +35,7 @@ export type HealthMetric = {
   systolic_bp_mm_hg: number | null;
   diastolic_bp_mm_hg: number | null;
   heart_rate_bpm: number | null;
+  steps: number | null;
   weight_kg: number | null;
   blood_glucose_mg_dl: number | null;
   note: string | null;
@@ -248,6 +249,7 @@ export const api = {
       systolic_bp_mm_hg: number | null;
       diastolic_bp_mm_hg: number | null;
       heart_rate_bpm: number | null;
+      steps: number | null;
       weight_kg: number | null;
       blood_glucose_mg_dl: number | null;
       note: string | null;

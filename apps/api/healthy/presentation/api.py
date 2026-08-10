@@ -36,6 +36,8 @@ from healthy.presentation.schemas import (
     HealthReportDetail,
     HealthReportSummary,
     HistorySourceSummary,
+    InsightEvidenceSummary,
+    InsightSummary,
     PersonCreate,
     PersonSummary,
     RegistrationResponse,
@@ -640,6 +642,26 @@ def get_assistant_today(
                 rule_version=item.rule_version,
             )
             for item in result.daily_attention
+        ],
+        insights=[
+            InsightSummary(
+                id=insight.id,
+                insight_type=insight.insight_type,
+                headline=insight.headline,
+                observed_at=insight.observed_at,
+                evidence=[
+                    InsightEvidenceSummary(
+                        source_kind=evidence.source_kind,
+                        source_record_id=evidence.source_record_id,
+                        occurred_at=evidence.occurred_at,
+                        role=evidence.role,
+                        report_id=evidence.report_id,
+                        report_source_name=evidence.report_source_name,
+                    )
+                    for evidence in insight.evidence
+                ],
+            )
+            for insight in result.insights
         ],
     )
 

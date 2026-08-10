@@ -81,6 +81,23 @@ export type DailyAttentionItem = {
   rule_version: string;
 };
 
+export type InsightEvidence = {
+  source_kind: "metric" | "symptom" | "report_observation";
+  source_record_id: string;
+  occurred_at: string;
+  role: string | null;
+  report_id: string | null;
+  report_source_name: string | null;
+};
+
+export type Insight = {
+  id: string;
+  insight_type: "metric_change" | "symptom_pattern" | "report_observation_update";
+  headline: string;
+  observed_at: string;
+  evidence: InsightEvidence[];
+};
+
 export type AssistantToday = {
   generated_at: string;
   lookback_days: number;
@@ -89,6 +106,7 @@ export type AssistantToday = {
   open_or_recent_actions: HealthAction[];
   recent_outcomes: HealthActionOutcome[];
   daily_attention: DailyAttentionItem[];
+  insights: Insight[];
 };
 
 export type HealthHistoryKind = "symptom" | "metric" | "report_observation";

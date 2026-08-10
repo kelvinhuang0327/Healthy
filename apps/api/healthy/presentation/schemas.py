@@ -293,6 +293,23 @@ class DailyAttentionItemSummary(BaseModel):
     rule_version: str
 
 
+class InsightEvidenceSummary(BaseModel):
+    source_kind: Literal["metric", "symptom", "report_observation"]
+    source_record_id: uuid.UUID
+    occurred_at: datetime
+    role: str | None = None
+    report_id: uuid.UUID | None = None
+    report_source_name: str | None = None
+
+
+class InsightSummary(BaseModel):
+    id: uuid.UUID
+    insight_type: Literal["metric_change", "symptom_pattern", "report_observation_update"]
+    headline: str
+    observed_at: datetime
+    evidence: list[InsightEvidenceSummary]
+
+
 class AssistantTodaySummary(BaseModel):
     generated_at: datetime
     lookback_days: int
@@ -301,6 +318,7 @@ class AssistantTodaySummary(BaseModel):
     open_or_recent_actions: list[HealthActionSummary]
     recent_outcomes: list[HealthActionOutcomeSummary]
     daily_attention: list[DailyAttentionItemSummary]
+    insights: list[InsightSummary]
 
 
 class HistorySourceSummary(BaseModel):

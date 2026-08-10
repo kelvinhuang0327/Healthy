@@ -134,6 +134,7 @@ def test_no_records_yields_insufficient_data_guidance_and_empty_lists(
     assert body["recent_symptoms"] == []
     assert body["open_or_recent_actions"] == []
     assert body["recent_outcomes"] == []
+    assert body["insights"] == []
     assert len(body["daily_attention"]) == 1
     item = body["daily_attention"][0]
     assert item["kind"] == "insufficient_data"

@@ -930,6 +930,44 @@ export default function Home() {
                     </p>
                   )}
 
+                  <h3>Evidence-linked insights</h3>
+                  {assistantToday.insights.length === 0 ? (
+                    <p data-testid="today-insights-empty">
+                      No evidence-linked insights yet.
+                    </p>
+                  ) : (
+                    <ul data-testid="today-insights-list">
+                      {assistantToday.insights.map((insight) => (
+                        <li
+                          key={insight.id}
+                          data-testid="today-insight-card"
+                          data-insight-type={insight.insight_type}
+                        >
+                          <strong>{insight.headline}</strong>
+                          <time dateTime={insight.observed_at}>
+                            {new Date(insight.observed_at).toLocaleString()}
+                          </time>
+                          <span>
+                            Evidence: {insight.evidence.map((item) => item.source_kind).join(", ")}
+                          </span>
+                          {insight.evidence.some(
+                            (item) => item.source_kind === "report_observation",
+                          ) && (
+                            <span>
+                              Source: {insight.evidence[0]?.report_source_name ?? "Confirmed report"}
+                            </span>
+                          )}
+                          <a
+                            className="history-link"
+                            href={`/history?person_id=${encodeURIComponent(selectedPerson.id)}`}
+                          >
+                            View evidence in Health History
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
                   <h3>Recent symptoms</h3>
                   <ul data-testid="today-symptom-list">
                     {assistantToday.recent_symptoms.map((symptom) => (

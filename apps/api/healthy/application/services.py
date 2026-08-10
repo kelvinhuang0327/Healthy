@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from healthy.application.history import HistoryItem, build_history
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
+from healthy.domain import health_score as health_score_domain
 from healthy.domain import insights as insights_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reports as reports_domain
@@ -273,6 +274,41 @@ def get_health_metric(
     metric_id: uuid.UUID,
 ) -> HealthMetric | None:
     return HealthMetricRepository.get_for_person(database_session, person_id, metric_id)
+
+
+def get_health_score(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+) -> health_score_domain.HealthScore | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    metrics = HealthMetricRepository.list_for_person(database_session, person.id)
+    symptoms = SymptomLogRepository.list_for_person(database_session, person.id)
+    return health_score_domain.build_health_score(
+        metrics=[
+            health_score_domain.MetricSnapshot(
+                id=metric.id,
+                recorded_at=metric.recorded_at,
+                systolic_bp_mm_hg=metric.systolic_bp_mm_hg,
+                diastolic_bp_mm_hg=metric.diastolic_bp_mm_hg,
+                heart_rate_bpm=metric.heart_rate_bpm,
+                weight_kg=metric.weight_kg,
+                blood_glucose_mg_dl=metric.blood_glucose_mg_dl,
+            )
+            for metric in metrics
+        ],
+        symptoms=[
+            health_score_domain.SymptomSnapshot(
+                id=symptom.id,
+                occurred_at=symptom.occurred_at,
+                severity=symptom.severity,
+            )
+            for symptom in symptoms
+        ],
+    )
 
 
 def create_symptom_log(

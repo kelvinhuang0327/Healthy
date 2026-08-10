@@ -881,6 +881,121 @@
         "title": "HealthReportSummary",
         "type": "object"
       },
+      "HealthScoreComponentSummary": {
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "blood_pressure",
+              "heart_rate",
+              "blood_glucose",
+              "recent_symptoms"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "penalty": {
+            "title": "Penalty",
+            "type": "integer"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "points",
+          "penalty",
+          "evidence_ids",
+          "rationale"
+        ],
+        "title": "HealthScoreComponentSummary",
+        "type": "object"
+      },
+      "HealthScoreSummary": {
+        "properties": {
+          "anchor_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor At"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/HealthScoreComponentSummary"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "data_points": {
+            "title": "Data Points",
+            "type": "integer"
+          },
+          "limitations": {
+            "title": "Limitations",
+            "type": "string"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "status": {
+            "enum": [
+              "stable",
+              "monitor",
+              "attention",
+              "insufficient_data"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "score",
+          "status",
+          "rule_version",
+          "anchor_at",
+          "data_points",
+          "components",
+          "limitations"
+        ],
+        "title": "HealthScoreSummary",
+        "type": "object"
+      },
       "HistorySourceSummary": {
         "properties": {
           "id": {
@@ -2074,6 +2189,51 @@
           }
         ],
         "summary": "Get Assistant Today"
+      }
+    },
+    "/v1/persons/{person_id}/health-score": {
+      "get": {
+        "operationId": "get_health_score_v1_persons__person_id__health_score_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthScoreSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Health Score"
       }
     },
     "/v1/persons/{person_id}/history": {

@@ -36,6 +36,7 @@ test("selected Person can log a health metric and see it in newest-first history
   const personId = await register(page, email, "Metrics Owner");
   await page.getByTestId("person-card").first().click();
   await expect(page.getByTestId("selected-person-pill")).toBeVisible();
+  await expect(page.getByTestId("health-score-status")).toHaveText("insufficient data");
 
   const form = page.getByTestId("metric-form");
   await form.locator('input[name="systolic_bp_mm_hg"]').fill("120");
@@ -54,6 +55,8 @@ test("selected Person can log a health metric and see it in newest-first history
   await expect(firstCard).toContainText("70.25 kg");
   await expect(firstCard).toContainText("95.5 mg/dL");
   await expect(firstCard).toContainText("After breakfast");
+  await expect(page.getByTestId("health-score-value")).toHaveText("100");
+  await expect(page.getByTestId("health-score-status")).toHaveText("stable");
 
   await form.locator('input[name="heart_rate_bpm"]').fill("65");
   await form.getByRole("button", { name: "Save metric" }).click();

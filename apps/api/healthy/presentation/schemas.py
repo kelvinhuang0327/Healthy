@@ -163,6 +163,25 @@ class HealthMetricSummary(BaseModel):
     created_at: datetime
 
 
+class HealthScoreComponentSummary(BaseModel):
+    kind: Literal["blood_pressure", "heart_rate", "blood_glucose", "recent_symptoms"]
+    label: str
+    points: int
+    penalty: int
+    evidence_ids: list[uuid.UUID]
+    rationale: str
+
+
+class HealthScoreSummary(BaseModel):
+    score: int | None
+    status: Literal["stable", "monitor", "attention", "insufficient_data"]
+    rule_version: str
+    anchor_at: datetime | None
+    data_points: int
+    components: list[HealthScoreComponentSummary]
+    limitations: str
+
+
 class SymptomLogCreate(BaseModel):
     symptom: str = Field(min_length=1, max_length=symptoms_domain.SYMPTOM_MAX_LENGTH)
     occurred_at: datetime

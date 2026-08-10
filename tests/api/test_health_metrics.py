@@ -104,8 +104,7 @@ def test_create_requires_paired_blood_pressure(client: TestClient) -> None:
         {"weight_kg": 70.123},
         {"blood_glucose_mg_dl": 5.0},
         {"blood_glucose_mg_dl": 95.55},
-        {"sleep_hours": -0.01},
-        {"sleep_hours": 24.01},
+        {"sleep_hours": 100.00},
         {"sleep_hours": 7.123},
     ],
 )

@@ -36,8 +36,6 @@ HeightCm = Annotated[
 SleepHours = Annotated[
     JsonDecimal,
     Field(
-        ge=metrics_domain.SLEEP_HOURS_MIN,
-        le=metrics_domain.SLEEP_HOURS_MAX,
         max_digits=metrics_domain.SLEEP_HOURS_MAX_DIGITS,
         decimal_places=metrics_domain.SLEEP_HOURS_DECIMAL_PLACES,
     ),

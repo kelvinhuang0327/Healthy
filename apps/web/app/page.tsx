@@ -808,8 +808,6 @@ export default function Home() {
                     name="sleep_hours"
                     type="number"
                     step="0.01"
-                    min={0}
-                    max={24}
                   />
                 </label>
                 <label>

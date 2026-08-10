@@ -31,6 +31,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        sa.text(
+            "DELETE FROM health_metrics "
+            "WHERE sleep_hours IS NOT NULL "
+            "AND systolic_bp_mm_hg IS NULL "
+            "AND diastolic_bp_mm_hg IS NULL "
+            "AND heart_rate_bpm IS NULL "
+            "AND weight_kg IS NULL "
+            "AND blood_glucose_mg_dl IS NULL"
+        )
+    )
     op.drop_constraint(
         "at_least_one_value",
         "health_metrics",

@@ -25,6 +25,7 @@ def _create_metric(client: TestClient, person_id: str, **overrides: object):
         "heart_rate_bpm": None,
         "weight_kg": None,
         "blood_glucose_mg_dl": None,
+        "sleep_hours": None,
         "note": None,
     }
     payload.update(overrides)
@@ -55,6 +56,7 @@ def test_metric_lifecycle_create_list_get_with_ordering_and_decimal_json_numbers
         diastolic_bp_mm_hg=80,
         weight_kg=70.25,
         blood_glucose_mg_dl=95.5,
+        sleep_hours=7.25,
         note="After breakfast",
     )
     assert older.status_code == 201
@@ -63,6 +65,7 @@ def test_metric_lifecycle_create_list_get_with_ordering_and_decimal_json_numbers
     newer_body = newer.json()
     assert newer_body["weight_kg"] == 70.25
     assert newer_body["blood_glucose_mg_dl"] == 95.5
+    assert newer_body["sleep_hours"] == 7.25
     assert isinstance(newer_body["weight_kg"], float)
     assert isinstance(newer_body["blood_glucose_mg_dl"], float)
     assert "70.25" not in newer.text or isinstance(newer_body["weight_kg"], float)
@@ -101,6 +104,8 @@ def test_create_requires_paired_blood_pressure(client: TestClient) -> None:
         {"weight_kg": 70.123},
         {"blood_glucose_mg_dl": 5.0},
         {"blood_glucose_mg_dl": 95.55},
+        {"sleep_hours": 100.00},
+        {"sleep_hours": 7.123},
     ],
 )
 def test_create_rejects_out_of_range_or_imprecise_values(
@@ -172,7 +177,7 @@ def test_create_requires_valid_csrf(client: TestClient) -> None:
 def test_metrics_are_owner_scoped_and_foreign_access_is_404(client: TestClient) -> None:
     assert register(client, email="owner-a@example.com").status_code == 201
     person_a = _person_id(client)
-    created = _create_metric(client, person_a, heart_rate_bpm=72)
+    created = _create_metric(client, person_a, sleep_hours=7.25)
     assert created.status_code == 201
     metric_a_id = created.json()["id"]
 
@@ -180,7 +185,7 @@ def test_metrics_are_owner_scoped_and_foreign_access_is_404(client: TestClient) 
     assert register(other, email="owner-b@example.com").status_code == 201
     person_b = _person_id(other)
 
-    foreign_post = _create_metric(other, person_a, heart_rate_bpm=72)
+    foreign_post = _create_metric(other, person_a, sleep_hours=7.25)
     assert foreign_post.status_code == 404
 
     foreign_list = other.get(f"/v1/persons/{person_a}/metrics")
@@ -264,6 +269,7 @@ def test_service_layer_maps_integrity_error_without_leaking_sql(client: TestClie
                 heart_rate_bpm=None,
                 weight_kg=None,
                 blood_glucose_mg_dl=None,
+                sleep_hours=None,
                 note=None,
             )
         assert database_session.scalar(select(func.count()).select_from(HealthMetric)) == 0

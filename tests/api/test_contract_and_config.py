@@ -124,6 +124,14 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
     assert {index["name"] for index in inspector.get_indexes("health_metrics")} >= {
         "ix_health_metrics_person_id"
     }
+    sleep_column = next(
+        column
+        for column in inspector.get_columns("health_metrics")
+        if column["name"] == "sleep_hours"
+    )
+    assert sleep_column["nullable"] is True
+    assert sleep_column["type"].precision == 4
+    assert sleep_column["type"].scale == 2
     health_metric_foreign_keys = inspector.get_foreign_keys("health_metrics")
     assert {foreign_key["referred_table"] for foreign_key in health_metric_foreign_keys} == {
         "persons"

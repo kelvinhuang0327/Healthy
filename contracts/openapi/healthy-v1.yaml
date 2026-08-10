@@ -512,6 +512,17 @@
             "title": "Recorded At",
             "type": "string"
           },
+          "sleep_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep Hours"
+          },
           "systolic_bp_mm_hg": {
             "anyOf": [
               {
@@ -609,6 +620,17 @@
             "title": "Recorded At",
             "type": "string"
           },
+          "sleep_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep Hours"
+          },
           "systolic_bp_mm_hg": {
             "anyOf": [
               {
@@ -641,6 +663,7 @@
           "heart_rate_bpm",
           "weight_kg",
           "blood_glucose_mg_dl",
+          "sleep_hours",
           "note",
           "created_at"
         ],

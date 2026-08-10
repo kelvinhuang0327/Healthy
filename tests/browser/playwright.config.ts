@@ -13,6 +13,7 @@ export default defineConfig({
     "health_actions.spec.ts",
     "health_assistant_today.spec.ts",
     "health_reports.spec.ts",
+    "health_history.spec.ts",
   ],
 
   fullyParallel: false,

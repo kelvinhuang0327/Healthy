@@ -91,6 +91,24 @@ export type AssistantToday = {
   daily_attention: DailyAttentionItem[];
 };
 
+export type HealthHistoryKind = "symptom" | "metric" | "report_observation";
+
+export type HealthHistoryItem = {
+  id: string;
+  kind: HealthHistoryKind;
+  occurred_at: string;
+  title: string;
+  primary_value: string | null;
+  unit: string | null;
+  detail: string | null;
+  source: {
+    type: HealthHistoryKind;
+    id: string;
+    report_id: string | null;
+    report_source_name: string | null;
+  };
+};
+
 function csrfToken(): string {
   const row = document.cookie
     .split("; ")
@@ -279,5 +297,6 @@ export const api = {
     ),
   assistantToday: (personId: string) =>
     request<AssistantToday>(`/persons/${personId}/assistant/today`),
+  healthHistory: (personId: string) =>
+    request<HealthHistoryItem[]>(`/persons/${personId}/history`),
 };
-

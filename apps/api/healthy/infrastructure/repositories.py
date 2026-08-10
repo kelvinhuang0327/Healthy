@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from healthy.domain.actions import HealthActionStatus
 from healthy.infrastructure.models import (
@@ -501,6 +501,28 @@ class HealthReportRepository:
                 HealthReportModel.status == "confirmed",
                 HealthReportObservationModel.observed_at >= since,
             )
+            .order_by(
+                HealthReportObservationModel.observed_at.desc(),
+                HealthReportObservationModel.created_at.desc(),
+                HealthReportObservationModel.id.desc(),
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def list_confirmed_observations_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+    ) -> list[HealthReportObservationModel]:
+        statement = (
+            select(HealthReportObservationModel)
+            .join(HealthReportModel, HealthReportModel.id == HealthReportObservationModel.report_id)
+            .where(
+                HealthReportModel.person_id == person_id,
+                HealthReportModel.status == "confirmed",
+                HealthReportObservationModel.person_id == person_id,
+            )
+            .options(joinedload(HealthReportObservationModel.report))
             .order_by(
                 HealthReportObservationModel.observed_at.desc(),
                 HealthReportObservationModel.created_at.desc(),

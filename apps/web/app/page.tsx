@@ -496,6 +496,15 @@ export default function Home() {
                 </li>
               ))}
             </ul>
+            {selectedPerson ? (
+              <a
+                className="history-link"
+                data-testid="history-link"
+                href={`/history?person_id=${encodeURIComponent(selectedPerson.id)}`}
+              >
+                View Health History
+              </a>
+            ) : null}
           </article>
 
           <article className="card">

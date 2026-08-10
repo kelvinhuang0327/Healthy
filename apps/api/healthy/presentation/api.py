@@ -30,10 +30,12 @@ from healthy.presentation.schemas import (
     HealthActionOutcomeCreate,
     HealthActionOutcomeSummary,
     HealthActionSummary,
+    HealthHistoryItemSummary,
     HealthMetricCreate,
     HealthMetricSummary,
     HealthReportDetail,
     HealthReportSummary,
+    HistorySourceSummary,
     PersonCreate,
     PersonSummary,
     RegistrationResponse,
@@ -640,6 +642,45 @@ def get_assistant_today(
             for item in result.daily_attention
         ],
     )
+
+
+@router.get(
+    "/persons/{person_id}/history",
+    response_model=list[HealthHistoryItemSummary],
+)
+def get_health_history(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> list[HealthHistoryItemSummary]:
+    history = services.get_health_history(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+    )
+    if history is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return [
+        HealthHistoryItemSummary(
+            id=item.id,
+            kind=item.kind,
+            occurred_at=item.occurred_at,
+            title=item.title,
+            primary_value=item.primary_value,
+            unit=item.unit,
+            detail=item.detail,
+            source=HistorySourceSummary(
+                type=item.source.type,
+                id=item.source.id,
+                report_id=item.source.report_id,
+                report_source_name=item.source.report_source_name,
+            ),
+        )
+        for item in history
+    ]
 
 
 @router.post(

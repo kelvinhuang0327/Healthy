@@ -74,6 +74,13 @@
             "title": "Generated At",
             "type": "string"
           },
+          "insights": {
+            "items": {
+              "$ref": "#/components/schemas/InsightSummary"
+            },
+            "title": "Insights",
+            "type": "array"
+          },
           "latest_metric": {
             "anyOf": [
               {
@@ -117,7 +124,8 @@
           "recent_symptoms",
           "open_or_recent_actions",
           "recent_outcomes",
-          "daily_attention"
+          "daily_attention",
+          "insights"
         ],
         "title": "AssistantTodaySummary",
         "type": "object"
@@ -918,6 +926,113 @@
           "id"
         ],
         "title": "HistorySourceSummary",
+        "type": "object"
+      },
+      "InsightEvidenceSummary": {
+        "properties": {
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "report_source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Source Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "source_kind": {
+            "enum": [
+              "metric",
+              "symptom",
+              "report_observation"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "source_record_id": {
+            "format": "uuid",
+            "title": "Source Record Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_kind",
+          "source_record_id",
+          "occurred_at"
+        ],
+        "title": "InsightEvidenceSummary",
+        "type": "object"
+      },
+      "InsightSummary": {
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/InsightEvidenceSummary"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "insight_type": {
+            "enum": [
+              "metric_change",
+              "symptom_pattern",
+              "report_observation_update"
+            ],
+            "title": "Insight Type",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "insight_type",
+          "headline",
+          "observed_at",
+          "evidence"
+        ],
+        "title": "InsightSummary",
         "type": "object"
       },
       "PersonCreate": {

@@ -59,10 +59,22 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await symptomForm.getByRole("button", { name: "Save symptom" }).click();
   await expect(page.getByTestId("symptom-list").getByTestId("symptom-card")).toHaveCount(1);
 
+  await symptomForm.getByLabel("Symptom").fill("Backdated headache");
+  await symptomForm
+    .locator('input[name="occurred_at"]')
+    .fill(new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16));
+  await symptomForm.getByLabel("Severity (1-5)").fill("2");
+  await symptomForm.getByRole("button", { name: "Save symptom" }).click();
+  await expect(page.getByTestId("symptom-list").getByTestId("symptom-card")).toHaveCount(2);
+
   const metricForm = page.getByTestId("metric-form");
   await metricForm.locator('input[name="heart_rate_bpm"]').fill("70");
   await metricForm.getByRole("button", { name: "Save metric" }).click();
   await expect(page.getByTestId("metric-list").getByTestId("metric-card")).toHaveCount(1);
+
+  await metricForm.locator('input[name="heart_rate_bpm"]').fill("72");
+  await metricForm.getByRole("button", { name: "Save metric" }).click();
+  await expect(page.getByTestId("metric-list").getByTestId("metric-card")).toHaveCount(2);
 
   const actionForm = page.getByTestId("action-form");
   await actionForm.getByLabel("Title").fill("Evening walk");
@@ -84,7 +96,7 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await outcomeForm.getByLabel("Note").fill("Felt noticeably better.");
   await outcomeForm.getByRole("button", { name: "Save outcome" }).click();
 
-  await expect(todaySection.getByTestId("today-symptom-card")).toHaveCount(1);
+  await expect(todaySection.getByTestId("today-symptom-card")).toHaveCount(2);
   await expect(todaySection.getByTestId("today-symptom-card").first()).toContainText(
     "Backdated headache",
   );
@@ -105,6 +117,52 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   expect(attentionKinds).toContain("action_open_or_due");
   expect(attentionKinds).toContain("outcome_recorded");
   expect(attentionKinds).not.toContain("insufficient_data");
+
+  const reportForm = page.getByTestId("report-import-form");
+  const reportTimestamp = new Date().toISOString();
+  await reportForm
+    .getByLabel(/JSON report/)
+    .fill(
+      JSON.stringify({
+        schema_version: "healthy.health-report.v1",
+        source_name: "Pending Insights Lab",
+        reported_at: reportTimestamp,
+        observations: [
+          {
+            code: "PENDING_INSIGHTS_GLUCOSE",
+            display_name: "Pending insights glucose",
+            value_numeric: 101,
+            unit: "mg/dL",
+            observed_at: reportTimestamp,
+          },
+        ],
+      }),
+    );
+  await reportForm.getByRole("button", { name: "Import structured report" }).click();
+  const pendingReport = page
+    .getByTestId("report-card")
+    .filter({ hasText: "Pending Insights Lab" });
+  await expect(pendingReport).toHaveAttribute("data-report-status", "pending");
+  await expect(todaySection).not.toContainText("Pending insights glucose");
+
+  await pendingReport.getByTestId("confirm-report-button").click();
+  await expect(pendingReport).toHaveAttribute("data-report-status", "confirmed");
+  await expect(todaySection.getByTestId("today-insight-card")).toHaveCount(3);
+  await expect(
+    todaySection
+      .getByTestId("today-insight-card")
+      .filter({ hasText: "Heart rate changed from 70 bpm to 72 bpm." }),
+  ).toBeVisible();
+  await expect(
+    todaySection
+      .getByTestId("today-insight-card")
+      .filter({ hasText: "Backdated headache appears in 2 recorded symptom entries." }),
+  ).toBeVisible();
+  const confirmedInsight = todaySection
+    .getByTestId("today-insight-card")
+    .filter({ hasText: "Pending insights glucose" });
+  await expect(confirmedInsight).toContainText("Source: Pending Insights Lab");
+  await expect(confirmedInsight.getByRole("link", { name: "View evidence in Health History" })).toBeVisible();
 
   const symptomItem = todaySection.locator(
     '[data-testid="daily-attention-item"][data-attention-kind="symptom_recently_reported"]',
@@ -131,4 +189,7 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   expect(serializedStorage).not.toContain("Felt noticeably better.");
 
   expect(consoleErrors).toEqual([]);
+
+  await confirmedInsight.getByRole("link", { name: "View evidence in Health History" }).click();
+  await expect(page).toHaveURL(/\/history\?person_id=/);
 });

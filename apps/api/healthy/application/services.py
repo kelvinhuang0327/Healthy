@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from healthy.application.history import HistoryItem, build_history
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
+from healthy.domain import insights as insights_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reports as reports_domain
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
@@ -99,6 +100,7 @@ class AssistantToday:
     recent_outcomes: list[HealthActionOutcome]
     daily_attention: tuple[assistant_domain.DailyAttentionItem, ...]
     recent_confirmed_observations: list[HealthReportObservationModel] = field(default_factory=list)
+    insights: tuple[insights_domain.Insight, ...] = ()
 
 
 def _session_record(account_id: uuid.UUID, max_age_seconds: int) -> tuple[SessionRecord, str]:
@@ -504,6 +506,12 @@ def get_assistant_today(
         person.id,
         since,
     )
+    all_metrics = HealthMetricRepository.list_for_person(database_session, person.id)
+    all_symptoms = SymptomLogRepository.list_for_person(database_session, person.id)
+    all_confirmed_obs = HealthReportRepository.list_confirmed_observations_for_person(
+        database_session,
+        person.id,
+    )
     open_actions = [
         action for action in actions if action.status == actions_domain.HealthActionStatus.TODO
     ]
@@ -566,6 +574,43 @@ def get_assistant_today(
             for obs in recent_confirmed_obs
         ],
     )
+    insights = insights_domain.build_insights(
+        metrics=[
+            insights_domain.MetricSnapshot(
+                id=metric.id,
+                recorded_at=metric.recorded_at,
+                systolic_bp_mm_hg=metric.systolic_bp_mm_hg,
+                diastolic_bp_mm_hg=metric.diastolic_bp_mm_hg,
+                heart_rate_bpm=metric.heart_rate_bpm,
+                weight_kg=metric.weight_kg,
+                blood_glucose_mg_dl=metric.blood_glucose_mg_dl,
+            )
+            for metric in all_metrics
+        ],
+        symptoms=[
+            insights_domain.SymptomSnapshot(
+                id=symptom.id,
+                symptom=symptom.symptom,
+                occurred_at=symptom.occurred_at,
+            )
+            for symptom in all_symptoms
+        ],
+        confirmed_report_observations=[
+            insights_domain.ReportObservationSnapshot(
+                id=observation.id,
+                report_id=observation.report_id,
+                report_source_name=observation.report.source_name,
+                code=observation.code,
+                display_name=observation.display_name,
+                value_numeric=observation.value_numeric,
+                value_text=observation.value_text,
+                unit=observation.unit,
+                observed_at=observation.observed_at,
+                created_at=observation.created_at,
+            )
+            for observation in all_confirmed_obs
+        ],
+    )
 
     return AssistantToday(
         generated_at=now,
@@ -576,6 +621,7 @@ def get_assistant_today(
         recent_outcomes=recent_outcomes,
         daily_attention=daily_attention,
         recent_confirmed_observations=recent_confirmed_obs,
+        insights=insights,
     )
 
 

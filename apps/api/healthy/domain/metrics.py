@@ -17,6 +17,8 @@ WEIGHT_KG_DECIMAL_PLACES = 2
 BLOOD_GLUCOSE_MG_DL_MIN = Decimal("10.0")
 BLOOD_GLUCOSE_MG_DL_MAX = Decimal("1000.0")
 BLOOD_GLUCOSE_MG_DL_DECIMAL_PLACES = 1
+SLEEP_HOURS_DECIMAL_PLACES = 2
+SLEEP_HOURS_MAX_DIGITS = 4
 NOTE_MAX_LENGTH = 2000
 RECORDED_AT_MAX_FUTURE_SKEW = timedelta(minutes=5)
 
@@ -29,6 +31,7 @@ def has_at_least_one_metric_value(
     steps: int | None,
     weight_kg: Decimal | None,
     blood_glucose_mg_dl: Decimal | None,
+    sleep_hours: Decimal | None,
 ) -> bool:
     """A HealthMetric is a bundled measurement event; it must carry a value."""
     return any(
@@ -40,6 +43,7 @@ def has_at_least_one_metric_value(
             steps,
             weight_kg,
             blood_glucose_mg_dl,
+            sleep_hours,
         )
     )
 

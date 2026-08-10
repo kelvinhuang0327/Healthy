@@ -89,6 +89,7 @@ class HealthMetricRepository:
         steps: int | None,
         weight_kg: Decimal | None,
         blood_glucose_mg_dl: Decimal | None,
+        sleep_hours: Decimal | None,
         note: str | None,
     ) -> HealthMetric:
         metric = HealthMetric(
@@ -100,6 +101,7 @@ class HealthMetricRepository:
             steps=steps,
             weight_kg=weight_kg,
             blood_glucose_mg_dl=blood_glucose_mg_dl,
+            sleep_hours=sleep_hours,
             note=note,
         )
         database_session.add(metric)

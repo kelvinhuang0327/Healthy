@@ -38,6 +38,7 @@ export type HealthMetric = {
   steps: number | null;
   weight_kg: number | null;
   blood_glucose_mg_dl: number | null;
+  sleep_hours: number | null;
   note: string | null;
   created_at: string;
 };
@@ -252,6 +253,7 @@ export const api = {
       steps: number | null;
       weight_kg: number | null;
       blood_glucose_mg_dl: number | null;
+      sleep_hours: number | null;
       note: string | null;
     },
   ) =>

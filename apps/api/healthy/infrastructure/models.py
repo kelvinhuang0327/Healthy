@@ -159,7 +159,8 @@ class HealthMetric(Base):
             " OR heart_rate_bpm IS NOT NULL"
             " OR steps IS NOT NULL"
             " OR weight_kg IS NOT NULL"
-            " OR blood_glucose_mg_dl IS NOT NULL",
+            " OR blood_glucose_mg_dl IS NOT NULL"
+            " OR sleep_hours IS NOT NULL",
             name="at_least_one_value",
         ),
         CheckConstraint(
@@ -212,6 +213,7 @@ class HealthMetric(Base):
     steps: Mapped[int | None] = mapped_column(Integer)
     weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     blood_glucose_mg_dl: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    sleep_hours: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     note: Mapped[str | None] = mapped_column(String(metrics_domain.NOTE_MAX_LENGTH))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

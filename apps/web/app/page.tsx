@@ -252,6 +252,7 @@ export default function Home() {
         steps: numberFieldOrNull(form, "steps"),
         weight_kg: numberFieldOrNull(form, "weight_kg"),
         blood_glucose_mg_dl: numberFieldOrNull(form, "blood_glucose_mg_dl"),
+        sleep_hours: numberFieldOrNull(form, "sleep_hours"),
         note: note || null,
       });
       formElement.reset();
@@ -807,6 +808,14 @@ export default function Home() {
                   />
                 </label>
                 <label>
+                  Sleep duration (hours)
+                  <input
+                    name="sleep_hours"
+                    type="number"
+                    step="0.01"
+                  />
+                </label>
+                <label>
                   Note
                   <input name="note" maxLength={2000} />
                 </label>
@@ -844,6 +853,9 @@ export default function Home() {
                       ) : null}
                       {metric.blood_glucose_mg_dl !== null ? (
                         <li>{metric.blood_glucose_mg_dl} mg/dL</li>
+                      ) : null}
+                      {metric.sleep_hours !== null ? (
+                        <li>{metric.sleep_hours} hours</li>
                       ) : null}
                     </ul>
                     {metric.note ? <p>{metric.note}</p> : null}

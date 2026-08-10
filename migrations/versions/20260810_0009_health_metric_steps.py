@@ -5,8 +5,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20260810_0008"
-down_revision: str | None = "20260810_0007"
+revision: str = "20260810_0009"
+down_revision: str | None = "20260810_0008"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -20,9 +20,10 @@ def upgrade() -> None:
         "systolic_bp_mm_hg IS NOT NULL"
         " OR diastolic_bp_mm_hg IS NOT NULL"
         " OR heart_rate_bpm IS NOT NULL"
-        " OR steps IS NOT NULL"
         " OR weight_kg IS NOT NULL"
-        " OR blood_glucose_mg_dl IS NOT NULL",
+        " OR blood_glucose_mg_dl IS NOT NULL"
+        " OR sleep_hours IS NOT NULL"
+        " OR steps IS NOT NULL",
     )
     op.create_check_constraint(
         "steps_bounds",
@@ -41,6 +42,7 @@ def downgrade() -> None:
         " OR diastolic_bp_mm_hg IS NOT NULL"
         " OR heart_rate_bpm IS NOT NULL"
         " OR weight_kg IS NOT NULL"
-        " OR blood_glucose_mg_dl IS NOT NULL",
+        " OR blood_glucose_mg_dl IS NOT NULL"
+        " OR sleep_hours IS NOT NULL",
     )
     op.drop_column("health_metrics", "steps")

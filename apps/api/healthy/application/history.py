@@ -54,6 +54,8 @@ def _metric_value(metric: HealthMetric) -> str:
         values.append(f"{_format_number(metric.weight_kg)} kg")
     if metric.blood_glucose_mg_dl is not None:
         values.append(f"{_format_number(metric.blood_glucose_mg_dl)} mg/dL")
+    if metric.sleep_hours is not None:
+        values.append(f"{_format_number(metric.sleep_hours)} hours")
     return " · ".join(values)
 
 

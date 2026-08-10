@@ -33,6 +33,14 @@ HeightCm = Annotated[
     Field(max_digits=5, decimal_places=2),
 ]
 
+SleepHours = Annotated[
+    JsonDecimal,
+    Field(
+        max_digits=metrics_domain.SLEEP_HOURS_MAX_DIGITS,
+        decimal_places=metrics_domain.SLEEP_HOURS_DECIMAL_PLACES,
+    ),
+]
+
 
 class AccountCreate(BaseModel):
     email: EmailStr
@@ -141,6 +149,7 @@ class HealthMetricCreate(BaseModel):
         ]
         | None
     ) = None
+    sleep_hours: SleepHours | None = None
     note: str | None = Field(default=None, max_length=metrics_domain.NOTE_MAX_LENGTH)
 
     @field_validator("recorded_at")
@@ -159,6 +168,7 @@ class HealthMetricCreate(BaseModel):
             steps=self.steps,
             weight_kg=self.weight_kg,
             blood_glucose_mg_dl=self.blood_glucose_mg_dl,
+            sleep_hours=self.sleep_hours,
         ):
             raise ValueError("At least one metric value is required")
         if not metrics_domain.blood_pressure_is_paired(
@@ -185,6 +195,7 @@ class HealthMetricSummary(BaseModel):
     steps: int | None
     weight_kg: JsonDecimal | None
     blood_glucose_mg_dl: JsonDecimal | None
+    sleep_hours: SleepHours | None
     note: str | None
     created_at: datetime
 

@@ -523,6 +523,19 @@
             ],
             "title": "Sleep Hours"
           },
+          "steps": {
+            "anyOf": [
+              {
+                "maximum": 200000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
           "systolic_bp_mm_hg": {
             "anyOf": [
               {
@@ -631,6 +644,17 @@
             ],
             "title": "Sleep Hours"
           },
+          "steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
           "systolic_bp_mm_hg": {
             "anyOf": [
               {
@@ -661,6 +685,7 @@
           "systolic_bp_mm_hg",
           "diastolic_bp_mm_hg",
           "heart_rate_bpm",
+          "steps",
           "weight_kg",
           "blood_glucose_mg_dl",
           "sleep_hours",

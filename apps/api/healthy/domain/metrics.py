@@ -9,6 +9,8 @@ DIASTOLIC_BP_MM_HG_MIN = 20
 DIASTOLIC_BP_MM_HG_MAX = 200
 HEART_RATE_BPM_MIN = 20
 HEART_RATE_BPM_MAX = 300
+STEPS_MIN = 0
+STEPS_MAX = 200_000
 WEIGHT_KG_MIN = Decimal("1.00")
 WEIGHT_KG_MAX = Decimal("500.00")
 WEIGHT_KG_DECIMAL_PLACES = 2
@@ -26,6 +28,7 @@ def has_at_least_one_metric_value(
     systolic_bp_mm_hg: int | None,
     diastolic_bp_mm_hg: int | None,
     heart_rate_bpm: int | None,
+    steps: int | None,
     weight_kg: Decimal | None,
     blood_glucose_mg_dl: Decimal | None,
     sleep_hours: Decimal | None,
@@ -37,6 +40,7 @@ def has_at_least_one_metric_value(
             systolic_bp_mm_hg,
             diastolic_bp_mm_hg,
             heart_rate_bpm,
+            steps,
             weight_kg,
             blood_glucose_mg_dl,
             sleep_hours,

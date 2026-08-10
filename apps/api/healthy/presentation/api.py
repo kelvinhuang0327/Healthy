@@ -286,6 +286,7 @@ def post_health_metric(
             systolic_bp_mm_hg=payload.systolic_bp_mm_hg,
             diastolic_bp_mm_hg=payload.diastolic_bp_mm_hg,
             heart_rate_bpm=payload.heart_rate_bpm,
+            steps=payload.steps,
             weight_kg=payload.weight_kg,
             blood_glucose_mg_dl=payload.blood_glucose_mg_dl,
             sleep_hours=payload.sleep_hours,

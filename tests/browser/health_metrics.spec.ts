@@ -42,6 +42,7 @@ test("selected Person can log a health metric and see it in newest-first history
   await form.locator('input[name="systolic_bp_mm_hg"]').fill("120");
   await form.locator('input[name="diastolic_bp_mm_hg"]').fill("80");
   await form.locator('input[name="heart_rate_bpm"]').fill("72");
+  await form.locator('input[name="steps"]').fill("6000");
   await form.locator('input[name="weight_kg"]').fill("70.25");
   await form.locator('input[name="blood_glucose_mg_dl"]').fill("95.5");
   await form.locator('input[name="sleep_hours"]').fill("7.25");
@@ -53,6 +54,7 @@ test("selected Person can log a health metric and see it in newest-first history
   const firstCard = metricList.getByTestId("metric-card").first();
   await expect(firstCard).toContainText("120/80 mmHg");
   await expect(firstCard).toContainText("72 bpm");
+  await expect(firstCard).toContainText("6000 steps");
   await expect(firstCard).toContainText("70.25 kg");
   await expect(firstCard).toContainText("95.5 mg/dL");
   await expect(firstCard).toContainText("7.25 hours");

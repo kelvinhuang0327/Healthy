@@ -122,6 +122,11 @@ class HealthMetricCreate(BaseModel):
         ge=metrics_domain.HEART_RATE_BPM_MIN,
         le=metrics_domain.HEART_RATE_BPM_MAX,
     )
+    steps: int | None = Field(
+        default=None,
+        ge=metrics_domain.STEPS_MIN,
+        le=metrics_domain.STEPS_MAX,
+    )
     weight_kg: (
         Annotated[
             JsonDecimal,
@@ -160,6 +165,7 @@ class HealthMetricCreate(BaseModel):
             systolic_bp_mm_hg=self.systolic_bp_mm_hg,
             diastolic_bp_mm_hg=self.diastolic_bp_mm_hg,
             heart_rate_bpm=self.heart_rate_bpm,
+            steps=self.steps,
             weight_kg=self.weight_kg,
             blood_glucose_mg_dl=self.blood_glucose_mg_dl,
             sleep_hours=self.sleep_hours,
@@ -186,6 +192,7 @@ class HealthMetricSummary(BaseModel):
     systolic_bp_mm_hg: int | None
     diastolic_bp_mm_hg: int | None
     heart_rate_bpm: int | None
+    steps: int | None
     weight_kg: JsonDecimal | None
     blood_glucose_mg_dl: JsonDecimal | None
     sleep_hours: SleepHours | None

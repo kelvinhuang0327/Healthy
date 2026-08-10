@@ -249,6 +249,7 @@ export default function Home() {
         systolic_bp_mm_hg: numberFieldOrNull(form, "systolic_bp_mm_hg"),
         diastolic_bp_mm_hg: numberFieldOrNull(form, "diastolic_bp_mm_hg"),
         heart_rate_bpm: numberFieldOrNull(form, "heart_rate_bpm"),
+        steps: numberFieldOrNull(form, "steps"),
         weight_kg: numberFieldOrNull(form, "weight_kg"),
         blood_glucose_mg_dl: numberFieldOrNull(form, "blood_glucose_mg_dl"),
         sleep_hours: numberFieldOrNull(form, "sleep_hours"),
@@ -783,6 +784,10 @@ export default function Home() {
                   <input name="heart_rate_bpm" type="number" min={20} max={300} />
                 </label>
                 <label>
+                  Steps (count)
+                  <input name="steps" type="number" min={0} max={200000} step={1} />
+                </label>
+                <label>
                   Weight (kg)
                   <input
                     name="weight_kg"
@@ -842,6 +847,7 @@ export default function Home() {
                       {metric.heart_rate_bpm !== null ? (
                         <li>{metric.heart_rate_bpm} bpm</li>
                       ) : null}
+                      {metric.steps !== null ? <li>{metric.steps} steps</li> : null}
                       {metric.weight_kg !== null ? (
                         <li>{metric.weight_kg} kg</li>
                       ) : null}

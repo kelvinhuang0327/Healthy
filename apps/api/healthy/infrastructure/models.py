@@ -157,6 +157,7 @@ class HealthMetric(Base):
             "systolic_bp_mm_hg IS NOT NULL"
             " OR diastolic_bp_mm_hg IS NOT NULL"
             " OR heart_rate_bpm IS NOT NULL"
+            " OR steps IS NOT NULL"
             " OR weight_kg IS NOT NULL"
             " OR blood_glucose_mg_dl IS NOT NULL"
             " OR sleep_hours IS NOT NULL",
@@ -176,6 +177,11 @@ class HealthMetric(Base):
             "heart_rate_bpm IS NULL OR heart_rate_bpm BETWEEN"
             f" {metrics_domain.HEART_RATE_BPM_MIN} AND {metrics_domain.HEART_RATE_BPM_MAX}",
             name="heart_rate_bpm_bounds",
+        ),
+        CheckConstraint(
+            "steps IS NULL OR steps BETWEEN"
+            f" {metrics_domain.STEPS_MIN} AND {metrics_domain.STEPS_MAX}",
+            name="steps_bounds",
         ),
         CheckConstraint(
             "weight_kg IS NULL OR weight_kg BETWEEN"
@@ -204,6 +210,7 @@ class HealthMetric(Base):
     systolic_bp_mm_hg: Mapped[int | None] = mapped_column(Integer)
     diastolic_bp_mm_hg: Mapped[int | None] = mapped_column(Integer)
     heart_rate_bpm: Mapped[int | None] = mapped_column(Integer)
+    steps: Mapped[int | None] = mapped_column(Integer)
     weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     blood_glucose_mg_dl: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
     sleep_hours: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))

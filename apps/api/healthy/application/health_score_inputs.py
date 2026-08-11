@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from healthy.infrastructure.models import HealthReportObservationModel
+from healthy.infrastructure.models import HealthMetric, HealthReportObservationModel
+
+if TYPE_CHECKING:
+    from healthy.application.risk_alert_inputs import RiskAlertsInput
 
 LEGACY_LAB_LOOKBACK_DAYS = 30
 SYMPTOM_DURATION_DEFERRED_DATA_GAP = "SYMPTOM_DURATION_DEFERRED_DATA_GAP"
@@ -90,6 +93,7 @@ class SymptomDurationInput:
 @dataclass(frozen=True, slots=True)
 class HealthScoreInputs:
     named_labs: NamedLabsInput
+    risk_alerts: RiskAlertsInput
     symptom_duration: SymptomDurationInput
 
 
@@ -185,19 +189,32 @@ def build_health_score_inputs(
     person_id: uuid.UUID,
     now: datetime,
     lookback_days: int = LEGACY_LAB_LOOKBACK_DAYS,
+    metrics: Iterable[HealthMetric] = (),
+    height_cm: Decimal | None = None,
 ) -> HealthScoreInputs:
     """Build the reusable score-input read model without persisting derived data."""
+    from healthy.application.risk_alert_inputs import build_risk_alerts_input
+
     normalized_now = _as_utc(now)
     if normalized_now is None:
         raise ValueError("now must be timezone-aware")
     if lookback_days < 0:
         raise ValueError("lookback_days must not be negative")
 
+    observation_list = tuple(observations)
+    metric_list = tuple(metrics)
+
     return HealthScoreInputs(
         named_labs=build_named_labs_input(
-            observations,
+            observation_list,
             person_id=person_id,
             window_start=normalized_now - timedelta(days=lookback_days),
+        ),
+        risk_alerts=build_risk_alerts_input(
+            metric_list,
+            observation_list,
+            person_id=person_id,
+            height_cm=height_cm,
         ),
         symptom_duration=SymptomDurationInput(
             status="deferred",

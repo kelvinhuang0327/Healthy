@@ -680,6 +680,7 @@ def get_health_score_inputs(
     person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
     if person is None:
         return None
+    metrics = HealthMetricRepository.list_for_person(database_session, person.id)
     observations = HealthReportRepository.list_confirmed_observations_for_person(
         database_session,
         person.id,
@@ -689,6 +690,8 @@ def get_health_score_inputs(
         person_id=person.id,
         now=now,
         lookback_days=lookback_days,
+        metrics=metrics,
+        height_cm=person.height_cm,
     )
 
 

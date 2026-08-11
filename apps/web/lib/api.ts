@@ -16,6 +16,7 @@ export type Person = {
   owner_account_id: string;
   display_name: string;
   relationship: string;
+  height_cm: number | null;
   is_default: boolean;
   created_at: string;
   updated_at: string;
@@ -34,8 +35,10 @@ export type HealthMetric = {
   systolic_bp_mm_hg: number | null;
   diastolic_bp_mm_hg: number | null;
   heart_rate_bpm: number | null;
+  steps: number | null;
   weight_kg: number | null;
   blood_glucose_mg_dl: number | null;
+  sleep_hours: number | null;
   note: string | null;
   created_at: string;
 };
@@ -66,6 +69,8 @@ export type SymptomLog = {
   occurred_at: string;
   severity: number;
   duration_minutes: number | null;
+  estimated_start_date: string | null;
+  estimated_duration_days: number | null;
   note: string | null;
   created_at: string;
 };
@@ -247,6 +252,11 @@ export const api = {
   session: () => request<SessionSummary>("/session"),
   persons: () => request<Person[]>("/persons"),
   person: (personId: string) => request<Person>(`/persons/${personId}`),
+  updatePersonHeight: (personId: string, heightCm: number | null) =>
+    request<Person>(`/persons/${personId}/profile`, {
+      method: "PATCH",
+      body: JSON.stringify({ height_cm: heightCm }),
+    }),
   createPerson: (payload: { display_name: string; relationship: string }) =>
     request<Person>("/persons", {
       method: "POST",
@@ -263,8 +273,10 @@ export const api = {
       systolic_bp_mm_hg: number | null;
       diastolic_bp_mm_hg: number | null;
       heart_rate_bpm: number | null;
+      steps: number | null;
       weight_kg: number | null;
       blood_glucose_mg_dl: number | null;
+      sleep_hours: number | null;
       note: string | null;
     },
   ) =>
@@ -283,6 +295,8 @@ export const api = {
       occurred_at: string;
       severity: number;
       duration_minutes: number | null;
+      estimated_start_date: string | null;
+      estimated_duration_days: number | null;
       note: string | null;
     },
   ) =>

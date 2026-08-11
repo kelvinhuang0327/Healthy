@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -58,6 +58,23 @@ class PersonRepository:
         database_session.add(person)
         return person
 
+    @staticmethod
+    def update_height_for_owner(
+        database_session: Session,
+        owner_account_id: uuid.UUID,
+        person_id: uuid.UUID,
+        height_cm: Decimal | None,
+    ) -> Person | None:
+        statement = select(Person).where(
+            Person.id == person_id,
+            Person.owner_account_id == owner_account_id,
+        )
+        person = database_session.scalar(statement)
+        if person is None:
+            return None
+        person.height_cm = height_cm
+        return person
+
 
 class HealthMetricRepository:
     @staticmethod
@@ -69,8 +86,10 @@ class HealthMetricRepository:
         systolic_bp_mm_hg: int | None,
         diastolic_bp_mm_hg: int | None,
         heart_rate_bpm: int | None,
+        steps: int | None,
         weight_kg: Decimal | None,
         blood_glucose_mg_dl: Decimal | None,
+        sleep_hours: Decimal | None,
         note: str | None,
     ) -> HealthMetric:
         metric = HealthMetric(
@@ -79,8 +98,10 @@ class HealthMetricRepository:
             systolic_bp_mm_hg=systolic_bp_mm_hg,
             diastolic_bp_mm_hg=diastolic_bp_mm_hg,
             heart_rate_bpm=heart_rate_bpm,
+            steps=steps,
             weight_kg=weight_kg,
             blood_glucose_mg_dl=blood_glucose_mg_dl,
+            sleep_hours=sleep_hours,
             note=note,
         )
         database_session.add(metric)
@@ -148,6 +169,8 @@ class SymptomLogRepository:
         occurred_at: datetime,
         severity: int,
         duration_minutes: int | None,
+        estimated_start_date: date | None,
+        estimated_duration_days: int | None,
         note: str | None,
     ) -> SymptomLog:
         symptom_log = SymptomLog(
@@ -156,6 +179,8 @@ class SymptomLogRepository:
             occurred_at=occurred_at,
             severity=severity,
             duration_minutes=duration_minutes,
+            estimated_start_date=estimated_start_date,
+            estimated_duration_days=estimated_duration_days,
             note=note,
         )
         database_session.add(symptom_log)

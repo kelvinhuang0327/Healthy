@@ -33,6 +33,8 @@ test("selected Person can backdate symptoms and see a newest-first timeline", as
   await symptomForm.locator('input[name="occurred_at"]').fill("2026-07-20T09:30");
   await symptomForm.getByLabel("Severity (1-5)").fill("2");
   await symptomForm.getByLabel("Duration (minutes, optional)").fill("45");
+  await symptomForm.getByLabel("Estimated start date (optional)").fill("2026-01-01");
+  await symptomForm.getByLabel("Estimated duration (days, optional)").fill("240");
   await symptomForm.getByLabel("Note").fill("Backdated first symptom");
   await symptomForm.getByRole("button", { name: "Save symptom" }).click();
 
@@ -41,6 +43,7 @@ test("selected Person can backdate symptoms and see a newest-first timeline", as
   await expect(timeline.getByTestId("symptom-card").first()).toContainText("Headache");
   await expect(timeline.getByTestId("symptom-card").first()).toContainText("Severity 2/5");
   await expect(timeline.getByTestId("symptom-card").first()).toContainText("45 minutes");
+  await expect(timeline.getByTestId("symptom-card").first()).toContainText("Estimated 240 days");
   await expect(timeline.getByTestId("symptom-card").first()).toContainText(
     "Backdated first symptom",
   );

@@ -22,6 +22,8 @@ def _create_symptom(client: TestClient, person_id: str, **overrides: object):
         "occurred_at": datetime.now(UTC).isoformat(),
         "severity": 3,
         "duration_minutes": None,
+        "estimated_start_date": None,
+        "estimated_duration_days": None,
         "note": None,
     }
     payload.update(overrides)
@@ -42,6 +44,8 @@ def test_create_historical_list_and_single_fetch_newest_first(client: TestClient
         symptom="  Headache  ",
         occurred_at="2026-01-01T08:00:00+08:00",
         severity=1,
+        estimated_start_date="2025-07-01",
+        estimated_duration_days=180,
         note="Historical entry",
     )
     newer = _create_symptom(
@@ -56,7 +60,11 @@ def test_create_historical_list_and_single_fetch_newest_first(client: TestClient
     assert older.json()["symptom"] == "Headache"
     assert older.json()["occurred_at"] == "2026-01-01T00:00:00Z"
     assert older.json()["duration_minutes"] is None
+    assert older.json()["estimated_start_date"] == "2025-07-01"
+    assert older.json()["estimated_duration_days"] == 180
     assert newer.json()["duration_minutes"] == 30
+    assert newer.json()["estimated_start_date"] is None
+    assert newer.json()["estimated_duration_days"] is None
 
     listing = client.get(f"/v1/persons/{person_id}/symptoms")
     assert listing.status_code == 200
@@ -98,6 +106,10 @@ def test_duration_is_optional_but_must_be_at_least_one_when_present(
     assert _create_symptom(client, person_id).status_code == 201
     assert _create_symptom(client, person_id, duration_minutes=1).status_code == 201
     assert _create_symptom(client, person_id, duration_minutes=0).status_code == 422
+    assert _create_symptom(client, person_id, estimated_duration_days=1).status_code == 201
+    assert _create_symptom(client, person_id, estimated_duration_days=36500).status_code == 201
+    assert _create_symptom(client, person_id, estimated_duration_days=0).status_code == 422
+    assert _create_symptom(client, person_id, estimated_duration_days=36501).status_code == 422
 
 
 @pytest.mark.parametrize(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -28,6 +28,19 @@ JsonDecimal = Annotated[
     WithJsonSchema({"type": "number"}),
 ]
 
+HeightCm = Annotated[
+    JsonDecimal,
+    Field(max_digits=5, decimal_places=2),
+]
+
+SleepHours = Annotated[
+    JsonDecimal,
+    Field(
+        max_digits=metrics_domain.SLEEP_HOURS_MAX_DIGITS,
+        decimal_places=metrics_domain.SLEEP_HOURS_DECIMAL_PLACES,
+    ),
+]
+
 
 class AccountCreate(BaseModel):
     email: EmailStr
@@ -43,6 +56,19 @@ class SessionCreate(BaseModel):
 class PersonCreate(BaseModel):
     display_name: str = Field(min_length=1, max_length=120)
     relationship: PersonRelationship = PersonRelationship.FAMILY
+
+
+class PersonHeightUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    height_cm: HeightCm | None
+
+    @field_validator("height_cm")
+    @classmethod
+    def validate_height_cm(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and (not value.is_finite() or value <= 0):
+            raise ValueError("height_cm must be a finite number greater than zero")
+        return value
 
 
 class AccountSummary(BaseModel):
@@ -61,6 +87,7 @@ class PersonSummary(BaseModel):
     owner_account_id: uuid.UUID
     display_name: str
     relationship: str
+    height_cm: HeightCm | None
     is_default: bool
     created_at: datetime
     updated_at: datetime
@@ -95,6 +122,11 @@ class HealthMetricCreate(BaseModel):
         ge=metrics_domain.HEART_RATE_BPM_MIN,
         le=metrics_domain.HEART_RATE_BPM_MAX,
     )
+    steps: int | None = Field(
+        default=None,
+        ge=metrics_domain.STEPS_MIN,
+        le=metrics_domain.STEPS_MAX,
+    )
     weight_kg: (
         Annotated[
             JsonDecimal,
@@ -117,6 +149,7 @@ class HealthMetricCreate(BaseModel):
         ]
         | None
     ) = None
+    sleep_hours: SleepHours | None = None
     note: str | None = Field(default=None, max_length=metrics_domain.NOTE_MAX_LENGTH)
 
     @field_validator("recorded_at")
@@ -132,8 +165,10 @@ class HealthMetricCreate(BaseModel):
             systolic_bp_mm_hg=self.systolic_bp_mm_hg,
             diastolic_bp_mm_hg=self.diastolic_bp_mm_hg,
             heart_rate_bpm=self.heart_rate_bpm,
+            steps=self.steps,
             weight_kg=self.weight_kg,
             blood_glucose_mg_dl=self.blood_glucose_mg_dl,
+            sleep_hours=self.sleep_hours,
         ):
             raise ValueError("At least one metric value is required")
         if not metrics_domain.blood_pressure_is_paired(
@@ -157,8 +192,10 @@ class HealthMetricSummary(BaseModel):
     systolic_bp_mm_hg: int | None
     diastolic_bp_mm_hg: int | None
     heart_rate_bpm: int | None
+    steps: int | None
     weight_kg: JsonDecimal | None
     blood_glucose_mg_dl: JsonDecimal | None
+    sleep_hours: SleepHours | None
     note: str | None
     created_at: datetime
 
@@ -193,6 +230,12 @@ class SymptomLogCreate(BaseModel):
         default=None,
         ge=symptoms_domain.DURATION_MINUTES_MIN,
     )
+    estimated_start_date: date | None = None
+    estimated_duration_days: int | None = Field(
+        default=None,
+        ge=symptoms_domain.ESTIMATED_DURATION_DAYS_MIN,
+        le=symptoms_domain.ESTIMATED_DURATION_DAYS_MAX,
+    )
     note: str | None = Field(default=None, max_length=symptoms_domain.NOTE_MAX_LENGTH)
 
     @field_validator("symptom")
@@ -220,6 +263,8 @@ class SymptomLogSummary(BaseModel):
     occurred_at: datetime
     severity: int
     duration_minutes: int | None
+    estimated_start_date: date | None
+    estimated_duration_days: int | None
     note: str | None
     created_at: datetime
 

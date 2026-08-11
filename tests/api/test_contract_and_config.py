@@ -20,6 +20,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/session",
         "/v1/persons",
         "/v1/persons/{person_id}",
+        "/v1/persons/{person_id}/profile",
         "/v1/persons/{person_id}/metrics",
         "/v1/persons/{person_id}/metrics/{metric_id}",
         "/v1/persons/{person_id}/health-score",
@@ -40,7 +41,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         (method.upper(), path)
         for path, methods in document["paths"].items()
         for method in methods
-        if method in {"get", "post", "delete"}
+        if method in {"get", "post", "patch", "delete"}
     }
     assert operations == {
         ("POST", "/v1/accounts"),
@@ -50,6 +51,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("GET", "/v1/persons"),
         ("POST", "/v1/persons"),
         ("GET", "/v1/persons/{person_id}"),
+        ("PATCH", "/v1/persons/{person_id}/profile"),
         ("POST", "/v1/persons/{person_id}/metrics"),
         ("GET", "/v1/persons/{person_id}/metrics"),
         ("GET", "/v1/persons/{person_id}/metrics/{metric_id}"),
@@ -124,6 +126,14 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
     assert {index["name"] for index in inspector.get_indexes("health_metrics")} >= {
         "ix_health_metrics_person_id"
     }
+    sleep_column = next(
+        column
+        for column in inspector.get_columns("health_metrics")
+        if column["name"] == "sleep_hours"
+    )
+    assert sleep_column["nullable"] is True
+    assert sleep_column["type"].precision == 4
+    assert sleep_column["type"].scale == 2
     health_metric_foreign_keys = inspector.get_foreign_keys("health_metrics")
     assert {foreign_key["referred_table"] for foreign_key in health_metric_foreign_keys} == {
         "persons"
@@ -139,6 +149,7 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "ck_health_metrics_systolic_bp_mm_hg_bounds",
         "ck_health_metrics_diastolic_bp_mm_hg_bounds",
         "ck_health_metrics_heart_rate_bpm_bounds",
+        "ck_health_metrics_steps_bounds",
         "ck_health_metrics_weight_kg_bounds",
         "ck_health_metrics_blood_glucose_mg_dl_bounds",
     }
@@ -158,6 +169,7 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "ck_symptom_logs_symptom_trimmed",
         "ck_symptom_logs_severity_bounds",
         "ck_symptom_logs_duration_minutes_minimum",
+        "ck_symptom_logs_estimated_duration_days_bounds",
         "ck_symptom_logs_note_length",
     }
     assert {index["name"] for index in inspector.get_indexes("health_actions")} >= {

@@ -9,12 +9,16 @@ DIASTOLIC_BP_MM_HG_MIN = 20
 DIASTOLIC_BP_MM_HG_MAX = 200
 HEART_RATE_BPM_MIN = 20
 HEART_RATE_BPM_MAX = 300
+STEPS_MIN = 0
+STEPS_MAX = 200_000
 WEIGHT_KG_MIN = Decimal("1.00")
 WEIGHT_KG_MAX = Decimal("500.00")
 WEIGHT_KG_DECIMAL_PLACES = 2
 BLOOD_GLUCOSE_MG_DL_MIN = Decimal("10.0")
 BLOOD_GLUCOSE_MG_DL_MAX = Decimal("1000.0")
 BLOOD_GLUCOSE_MG_DL_DECIMAL_PLACES = 1
+SLEEP_HOURS_DECIMAL_PLACES = 2
+SLEEP_HOURS_MAX_DIGITS = 4
 NOTE_MAX_LENGTH = 2000
 RECORDED_AT_MAX_FUTURE_SKEW = timedelta(minutes=5)
 
@@ -24,8 +28,10 @@ def has_at_least_one_metric_value(
     systolic_bp_mm_hg: int | None,
     diastolic_bp_mm_hg: int | None,
     heart_rate_bpm: int | None,
+    steps: int | None,
     weight_kg: Decimal | None,
     blood_glucose_mg_dl: Decimal | None,
+    sleep_hours: Decimal | None,
 ) -> bool:
     """A HealthMetric is a bundled measurement event; it must carry a value."""
     return any(
@@ -34,8 +40,10 @@ def has_at_least_one_metric_value(
             systolic_bp_mm_hg,
             diastolic_bp_mm_hg,
             heart_rate_bpm,
+            steps,
             weight_kg,
             blood_glucose_mg_dl,
+            sleep_hours,
         )
     )
 

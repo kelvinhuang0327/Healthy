@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from healthy.application import health_score_inputs
 from healthy.application.history import HistoryItem, build_history
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
@@ -233,6 +234,25 @@ def create_person(
     return person
 
 
+def update_person_height(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    height_cm: Decimal | None,
+) -> Person | None:
+    person = PersonRepository.update_height_for_owner(
+        database_session,
+        owner_account_id,
+        person_id,
+        height_cm,
+    )
+    if person is None:
+        return None
+    database_session.commit()
+    return person
+
+
 def create_health_metric(
     database_session: Session,
     *,
@@ -241,8 +261,10 @@ def create_health_metric(
     systolic_bp_mm_hg: int | None,
     diastolic_bp_mm_hg: int | None,
     heart_rate_bpm: int | None,
+    steps: int | None,
     weight_kg: Decimal | None,
     blood_glucose_mg_dl: Decimal | None,
+    sleep_hours: Decimal | None,
     note: str | None,
 ) -> HealthMetric:
     metric = HealthMetricRepository.create_for_person(
@@ -252,8 +274,10 @@ def create_health_metric(
         systolic_bp_mm_hg=systolic_bp_mm_hg,
         diastolic_bp_mm_hg=diastolic_bp_mm_hg,
         heart_rate_bpm=heart_rate_bpm,
+        steps=steps,
         weight_kg=weight_kg,
         blood_glucose_mg_dl=blood_glucose_mg_dl,
+        sleep_hours=sleep_hours,
         note=note,
     )
     try:
@@ -321,6 +345,8 @@ def create_symptom_log(
     severity: int,
     duration_minutes: int | None,
     note: str | None,
+    estimated_start_date: date | None = None,
+    estimated_duration_days: int | None = None,
 ) -> SymptomLog | None:
     person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
     if person is None:
@@ -332,6 +358,8 @@ def create_symptom_log(
         occurred_at=occurred_at,
         severity=severity,
         duration_minutes=duration_minutes,
+        estimated_start_date=estimated_start_date,
+        estimated_duration_days=estimated_duration_days,
         note=note,
     )
     try:
@@ -677,6 +705,35 @@ def get_health_history(
             database_session,
             person.id,
         ),
+    )
+
+
+def get_health_score_inputs(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    now: datetime,
+    lookback_days: int = health_score_inputs.LEGACY_LAB_LOOKBACK_DAYS,
+) -> health_score_inputs.HealthScoreInputs | None:
+    """Read the current person's reusable score inputs without writing state."""
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    metrics = HealthMetricRepository.list_for_person(database_session, person.id)
+    symptoms = SymptomLogRepository.list_for_person(database_session, person.id)
+    observations = HealthReportRepository.list_confirmed_observations_for_person(
+        database_session,
+        person.id,
+    )
+    return health_score_inputs.build_health_score_inputs(
+        observations,
+        person_id=person.id,
+        now=now,
+        lookback_days=lookback_days,
+        metrics=metrics,
+        symptoms=symptoms,
+        height_cm=person.height_cm,
     )
 
 

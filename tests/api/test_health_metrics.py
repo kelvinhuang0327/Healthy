@@ -23,8 +23,10 @@ def _create_metric(client: TestClient, person_id: str, **overrides: object):
         "systolic_bp_mm_hg": None,
         "diastolic_bp_mm_hg": None,
         "heart_rate_bpm": None,
+        "steps": None,
         "weight_kg": None,
         "blood_glucose_mg_dl": None,
+        "sleep_hours": None,
         "note": None,
     }
     payload.update(overrides)
@@ -55,6 +57,8 @@ def test_metric_lifecycle_create_list_get_with_ordering_and_decimal_json_numbers
         diastolic_bp_mm_hg=80,
         weight_kg=70.25,
         blood_glucose_mg_dl=95.5,
+        steps=6000,
+        sleep_hours=7.25,
         note="After breakfast",
     )
     assert older.status_code == 201
@@ -63,6 +67,8 @@ def test_metric_lifecycle_create_list_get_with_ordering_and_decimal_json_numbers
     newer_body = newer.json()
     assert newer_body["weight_kg"] == 70.25
     assert newer_body["blood_glucose_mg_dl"] == 95.5
+    assert newer_body["steps"] == 6000
+    assert newer_body["sleep_hours"] == 7.25
     assert isinstance(newer_body["weight_kg"], float)
     assert isinstance(newer_body["blood_glucose_mg_dl"], float)
     assert "70.25" not in newer.text or isinstance(newer_body["weight_kg"], float)
@@ -97,10 +103,14 @@ def test_create_requires_paired_blood_pressure(client: TestClient) -> None:
         {"systolic_bp_mm_hg": 400, "diastolic_bp_mm_hg": 80},
         {"systolic_bp_mm_hg": 120, "diastolic_bp_mm_hg": 5},
         {"heart_rate_bpm": 10},
+        {"steps": -1},
+        {"steps": 200001},
         {"weight_kg": 0.5},
         {"weight_kg": 70.123},
         {"blood_glucose_mg_dl": 5.0},
         {"blood_glucose_mg_dl": 95.55},
+        {"sleep_hours": 100.00},
+        {"sleep_hours": 7.123},
     ],
 )
 def test_create_rejects_out_of_range_or_imprecise_values(
@@ -121,6 +131,27 @@ def test_create_rejects_recorded_at_more_than_five_minutes_in_future(
     future = (datetime.now(UTC) + timedelta(minutes=10)).isoformat()
     response = _create_metric(client, person_id, recorded_at=future, heart_rate_bpm=70)
     assert response.status_code == 422
+
+
+def test_steps_preserves_missing_and_zero_and_round_trips(client: TestClient) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+
+    missing = _create_metric(client, person_id, heart_rate_bpm=70)
+    zero = _create_metric(client, person_id, steps=0)
+
+    assert missing.status_code == zero.status_code == 201
+    assert missing.json()["steps"] is None
+    assert zero.json()["steps"] == 0
+
+    rows = client.get(f"/v1/persons/{person_id}/metrics").json()
+    by_id = {row["id"]: row for row in rows}
+    assert by_id[missing.json()["id"]]["steps"] is None
+    assert by_id[zero.json()["id"]]["steps"] == 0
+
+    retrieved = client.get(f"/v1/persons/{person_id}/metrics/{zero.json()['id']}")
+    assert retrieved.status_code == 200
+    assert retrieved.json()["steps"] == 0
 
 
 def test_create_requires_timezone_aware_recorded_at(client: TestClient) -> None:
@@ -172,7 +203,7 @@ def test_create_requires_valid_csrf(client: TestClient) -> None:
 def test_metrics_are_owner_scoped_and_foreign_access_is_404(client: TestClient) -> None:
     assert register(client, email="owner-a@example.com").status_code == 201
     person_a = _person_id(client)
-    created = _create_metric(client, person_a, heart_rate_bpm=72)
+    created = _create_metric(client, person_a, sleep_hours=7.25)
     assert created.status_code == 201
     metric_a_id = created.json()["id"]
 
@@ -180,7 +211,7 @@ def test_metrics_are_owner_scoped_and_foreign_access_is_404(client: TestClient) 
     assert register(other, email="owner-b@example.com").status_code == 201
     person_b = _person_id(other)
 
-    foreign_post = _create_metric(other, person_a, heart_rate_bpm=72)
+    foreign_post = _create_metric(other, person_a, sleep_hours=7.25)
     assert foreign_post.status_code == 404
 
     foreign_list = other.get(f"/v1/persons/{person_a}/metrics")
@@ -234,6 +265,7 @@ def test_repeated_gets_do_not_write_health_metrics(client: TestClient) -> None:
                         HealthMetric.recorded_at,
                         HealthMetric.created_at,
                         HealthMetric.heart_rate_bpm,
+                        HealthMetric.steps,
                     ).order_by(HealthMetric.id)
                 ).tuples()
             )
@@ -262,8 +294,10 @@ def test_service_layer_maps_integrity_error_without_leaking_sql(client: TestClie
                 systolic_bp_mm_hg=15,
                 diastolic_bp_mm_hg=15,
                 heart_rate_bpm=None,
+                steps=None,
                 weight_kg=None,
                 blood_glucose_mg_dl=None,
+                sleep_hours=None,
                 note=None,
             )
         assert database_session.scalar(select(func.count()).select_from(HealthMetric)) == 0

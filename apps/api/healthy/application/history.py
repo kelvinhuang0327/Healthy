@@ -48,10 +48,14 @@ def _metric_value(metric: HealthMetric) -> str:
         values.append(f"{metric.systolic_bp_mm_hg}/{metric.diastolic_bp_mm_hg} mmHg")
     if metric.heart_rate_bpm is not None:
         values.append(f"{metric.heart_rate_bpm} bpm")
+    if metric.steps is not None:
+        values.append(f"{metric.steps} steps")
     if metric.weight_kg is not None:
         values.append(f"{_format_number(metric.weight_kg)} kg")
     if metric.blood_glucose_mg_dl is not None:
         values.append(f"{_format_number(metric.blood_glucose_mg_dl)} mg/dL")
+    if metric.sleep_hours is not None:
+        values.append(f"{_format_number(metric.sleep_hours)} hours")
     return " · ".join(values)
 
 

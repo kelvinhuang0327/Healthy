@@ -512,6 +512,30 @@
             "title": "Recorded At",
             "type": "string"
           },
+          "sleep_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep Hours"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "maximum": 200000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
           "systolic_bp_mm_hg": {
             "anyOf": [
               {
@@ -609,6 +633,28 @@
             "title": "Recorded At",
             "type": "string"
           },
+          "sleep_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep Hours"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          },
           "systolic_bp_mm_hg": {
             "anyOf": [
               {
@@ -639,8 +685,10 @@
           "systolic_bp_mm_hg",
           "diastolic_bp_mm_hg",
           "heart_rate_bpm",
+          "steps",
           "weight_kg",
           "blood_glucose_mg_dl",
+          "sleep_hours",
           "note",
           "created_at"
         ],
@@ -1169,6 +1217,27 @@
         "title": "PersonCreate",
         "type": "object"
       },
+      "PersonHeightUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "height_cm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Cm"
+          }
+        },
+        "required": [
+          "height_cm"
+        ],
+        "title": "PersonHeightUpdate",
+        "type": "object"
+      },
       "PersonRelationship": {
         "enum": [
           "self",
@@ -1191,6 +1260,17 @@
           "display_name": {
             "title": "Display Name",
             "type": "string"
+          },
+          "height_cm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Cm"
           },
           "id": {
             "format": "uuid",
@@ -1221,6 +1301,7 @@
           "owner_account_id",
           "display_name",
           "relationship",
+          "height_cm",
           "is_default",
           "created_at",
           "updated_at"
@@ -1306,6 +1387,31 @@
             ],
             "title": "Duration Minutes"
           },
+          "estimated_duration_days": {
+            "anyOf": [
+              {
+                "maximum": 36500.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Duration Days"
+          },
+          "estimated_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Start Date"
+          },
           "note": {
             "anyOf": [
               {
@@ -1362,6 +1468,29 @@
             ],
             "title": "Duration Minutes"
           },
+          "estimated_duration_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Duration Days"
+          },
+          "estimated_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Start Date"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -1404,6 +1533,8 @@
           "occurred_at",
           "severity",
           "duration_minutes",
+          "estimated_start_date",
+          "estimated_duration_days",
           "note",
           "created_at"
         ],
@@ -2472,6 +2603,93 @@
           }
         ],
         "summary": "Get Health Metric"
+      }
+    },
+    "/v1/persons/{person_id}/profile": {
+      "patch": {
+        "operationId": "patch_person_profile_v1_persons__person_id__profile_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthy_csrf",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthy Csrf"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonHeightUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Patch Person Profile"
       }
     },
     "/v1/persons/{person_id}/reports": {

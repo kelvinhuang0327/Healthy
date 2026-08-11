@@ -30,6 +30,7 @@ export default function Home() {
   const [assistantToday, setAssistantToday] = useState<AssistantToday | null>(
     null,
   );
+  const [heightSaving, setHeightSaving] = useState(false);
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -111,6 +112,36 @@ export default function Home() {
       cancelled = true;
     };
   }, [effectiveSelectedPersonId]);
+
+  async function saveHeight(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const rawHeight = String(form.get("height_cm") ?? "").trim();
+    const heightCm = rawHeight ? Number(rawHeight) : null;
+    if (
+      heightCm !== null &&
+      (!Number.isFinite(heightCm) || heightCm <= 0)
+    ) {
+      setError("Height must be a finite number greater than zero.");
+      return;
+    }
+    setHeightSaving(true);
+    try {
+      const updated = await api.updatePersonHeight(personId, heightCm);
+      setPersons((current) =>
+        current.map((person) => (person.id === updated.id ? updated : person)),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Height update failed");
+    } finally {
+      setHeightSaving(false);
+    }
+  }
 
 
   async function refreshAssistantToday() {
@@ -239,8 +270,10 @@ export default function Home() {
         systolic_bp_mm_hg: numberFieldOrNull(form, "systolic_bp_mm_hg"),
         diastolic_bp_mm_hg: numberFieldOrNull(form, "diastolic_bp_mm_hg"),
         heart_rate_bpm: numberFieldOrNull(form, "heart_rate_bpm"),
+        steps: numberFieldOrNull(form, "steps"),
         weight_kg: numberFieldOrNull(form, "weight_kg"),
         blood_glucose_mg_dl: numberFieldOrNull(form, "blood_glucose_mg_dl"),
+        sleep_hours: numberFieldOrNull(form, "sleep_hours"),
         note: note || null,
       });
       formElement.reset();
@@ -265,6 +298,7 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const occurredAtLocal = String(form.get("occurred_at") ?? "");
+    const estimatedStartDate = String(form.get("estimated_start_date") ?? "").trim();
     const note = String(form.get("note") ?? "").trim();
     try {
       await api.createSymptomLog(personId, {
@@ -272,6 +306,8 @@ export default function Home() {
         occurred_at: new Date(occurredAtLocal).toISOString(),
         severity: Number(form.get("severity")),
         duration_minutes: numberFieldOrNull(form, "duration_minutes"),
+        estimated_start_date: estimatedStartDate || null,
+        estimated_duration_days: numberFieldOrNull(form, "estimated_duration_days"),
         note: note || null,
       });
       formElement.reset();
@@ -605,6 +641,42 @@ export default function Home() {
           </article>
 
           {selectedPerson ? (
+            <article className="card" data-testid="height-profile">
+              <h2>Height for {selectedPerson.display_name}</h2>
+              {selectedPerson.height_cm == null ? (
+                <p data-testid="height-empty">No height recorded yet.</p>
+              ) : (
+                <p data-testid="height-value">
+                  Current height: {selectedPerson.height_cm} cm
+                </p>
+              )}
+              <form
+                key={`${selectedPerson.id}-${selectedPerson.height_cm ?? "empty"}`}
+                onSubmit={saveHeight}
+              >
+                <label>
+                  Height (cm)
+                  <input
+                    name="height_cm"
+                    type="number"
+                    step="0.01"
+                    defaultValue={
+                      selectedPerson.height_cm == null
+                        ? ""
+                        : String(selectedPerson.height_cm)
+                    }
+                    aria-describedby="height-help"
+                  />
+                </label>
+                <p id="height-help">Use centimeters. Leave blank to clear.</p>
+                <button type="submit" disabled={heightSaving}>
+                  {heightSaving ? "Saving height…" : "Save height"}
+                </button>
+              </form>
+            </article>
+          ) : null}
+
+          {selectedPerson ? (
             <article className="card">
               <h2>Create an action for {selectedPerson.display_name}</h2>
               <form onSubmit={createHealthAction} data-testid="action-form">
@@ -724,6 +796,19 @@ export default function Home() {
                   />
                 </label>
                 <label>
+                  Estimated start date (optional)
+                  <input name="estimated_start_date" type="date" />
+                </label>
+                <label>
+                  Estimated duration (days, optional)
+                  <input
+                    name="estimated_duration_days"
+                    type="number"
+                    min={1}
+                    max={36500}
+                  />
+                </label>
+                <label>
                   Note
                   <input name="note" maxLength={2000} />
                 </label>
@@ -751,6 +836,9 @@ export default function Home() {
                       <li>Severity {symptomLog.severity}/5</li>
                       {symptomLog.duration_minutes !== null ? (
                         <li>{symptomLog.duration_minutes} minutes</li>
+                      ) : null}
+                      {symptomLog.estimated_duration_days !== null ? (
+                        <li>Estimated {symptomLog.estimated_duration_days} days</li>
                       ) : null}
                     </ul>
                     {symptomLog.note ? <p>{symptomLog.note}</p> : null}
@@ -791,6 +879,10 @@ export default function Home() {
                   <input name="heart_rate_bpm" type="number" min={20} max={300} />
                 </label>
                 <label>
+                  Steps (count)
+                  <input name="steps" type="number" min={0} max={200000} step={1} />
+                </label>
+                <label>
                   Weight (kg)
                   <input
                     name="weight_kg"
@@ -808,6 +900,14 @@ export default function Home() {
                     step="0.1"
                     min={10}
                     max={1000}
+                  />
+                </label>
+                <label>
+                  Sleep duration (hours)
+                  <input
+                    name="sleep_hours"
+                    type="number"
+                    step="0.01"
                   />
                 </label>
                 <label>
@@ -842,11 +942,15 @@ export default function Home() {
                       {metric.heart_rate_bpm !== null ? (
                         <li>{metric.heart_rate_bpm} bpm</li>
                       ) : null}
+                      {metric.steps !== null ? <li>{metric.steps} steps</li> : null}
                       {metric.weight_kg !== null ? (
                         <li>{metric.weight_kg} kg</li>
                       ) : null}
                       {metric.blood_glucose_mg_dl !== null ? (
                         <li>{metric.blood_glucose_mg_dl} mg/dL</li>
+                      ) : null}
+                      {metric.sleep_hours !== null ? (
+                        <li>{metric.sleep_hours} hours</li>
                       ) : null}
                     </ul>
                     {metric.note ? <p>{metric.note}</p> : null}

@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
-from healthy.application.health_score_inputs import LEGACY_LAB_ALIASES, LEGACY_LAB_UNITS
+from healthy.application.health_score_inputs import LEGACY_LAB_UNITS
 from healthy.infrastructure.models import HealthMetric, HealthReportObservationModel
 
 RiskAlertSeverity = Literal["medium", "high"]
 RiskAlertStatus = Literal["active"]
-RiskAlertSourceKind = Literal["metric", "report_observation"]
+RiskAlertSourceKind = Literal["health_metric", "lab_report"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +21,7 @@ class RiskAlertEvidence:
     source_id: uuid.UUID
     person_id: uuid.UUID
     observed_at: datetime
+    observation_id: uuid.UUID | None = None
     report_id: uuid.UUID | None = None
     report_source_name: str | None = None
 
@@ -59,15 +60,20 @@ _BP_SYSTOLIC_HIGH = Decimal("130")
 _BP_DIASTOLIC_HIGH = Decimal("80")
 _GLUCOSE_HIGH = Decimal("126")
 
-_LAB_ALIASES: dict[str, str] = {
-    alias.casefold(): canonical
-    for canonical, aliases in (
-        *LEGACY_LAB_ALIASES.items(),
-        ("AST", ("AST",)),
-        ("Uric Acid", ("Uric Acid", "UricAcid")),
-    )
-    for alias in aliases
-}
+_LAB_ALIASES: tuple[tuple[str, str], ...] = (
+    ("ALT", "ALT"),
+    ("GPT", "ALT"),
+    ("AST", "AST"),
+    ("GOT", "AST"),
+    ("尿酸", "Uric Acid"),
+    ("Uric Acid", "Uric Acid"),
+    ("膽固醇", "Total Cholesterol"),
+    ("Total Cholesterol", "Total Cholesterol"),
+    ("LDL", "LDL"),
+    ("HDL", "HDL"),
+    ("Triglycerides", "Triglycerides"),
+    ("三酸甘油脂", "Triglycerides"),
+)
 _LAB_UNITS: dict[str, str] = {
     **{str(key): unit for key, unit in LEGACY_LAB_UNITS.items()},
     "AST": "U/L",
@@ -164,14 +170,19 @@ def _build_lab_alerts(
         if observation.person_id != person_id:
             continue
         report = observation.report
-        if report.person_id != person_id or report.status != "confirmed":
+        if (
+            report is None
+            or report.person_id != person_id
+            or report.status != "confirmed"
+            or observation.report_id is None
+        ):
             continue
         observed_at = _as_utc(observation.observed_at)
         value = _as_decimal(observation.value_numeric)
         if observed_at is None or value is None:
             continue
 
-        label = _LAB_ALIASES.get(observation.display_name.strip().casefold())
+        label = _canonical_lab_label(observation.display_name)
         if label is None:
             continue
         unit = _normalize_unit(observation.unit)
@@ -187,10 +198,11 @@ def _build_lab_alerts(
                     risk_type=rule.rule_code.lower(),
                     severity=rule.severity,
                     evidence=RiskAlertEvidence(
-                        source_kind="report_observation",
-                        source_id=observation.id,
+                        source_kind="lab_report",
+                        source_id=observation.report_id,
                         person_id=person_id,
                         observed_at=observed_at,
+                        observation_id=observation.id,
                         report_id=observation.report_id,
                         report_source_name=report.source_name,
                     ),
@@ -211,7 +223,7 @@ def _metric_alert(
         risk_type=rule_code.lower(),
         severity=severity,
         evidence=RiskAlertEvidence(
-            source_kind="metric",
+            source_kind="health_metric",
             source_id=metric.id,
             person_id=person_id,
             observed_at=observed_at,
@@ -266,9 +278,18 @@ def _as_decimal(value: object) -> Decimal | None:
     if value is None:
         return None
     try:
-        return Decimal(str(value))
-    except InvalidOperation, ValueError:
+        decimal_value = Decimal(str(value))
+    except InvalidOperation, TypeError, ValueError:
         return None
+    return decimal_value if decimal_value.is_finite() else None
+
+
+def _canonical_lab_label(display_name: str) -> str | None:
+    normalized_name = display_name.strip().casefold()
+    for alias, canonical in _LAB_ALIASES:
+        if alias.casefold() in normalized_name:
+            return canonical
+    return None
 
 
 def _normalize_unit(unit: str | None) -> str | None:

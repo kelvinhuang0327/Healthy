@@ -147,12 +147,70 @@ def test_lab_rules_preserve_evidence_and_reject_incompatible_units() -> None:
         "LIVER_ALT_HIGH",
     ]
     alt_alert = result.alerts[1]
-    assert alt_alert.evidence.source_kind == "report_observation"
-    assert alt_alert.evidence.source_id == observations[0].id
+    assert alt_alert.evidence.source_kind == "lab_report"
+    assert alt_alert.evidence.source_id == observations[0].report_id
+    assert alt_alert.evidence.observation_id == observations[0].id
     assert alt_alert.evidence.person_id == person_id
     assert alt_alert.evidence.report_id == observations[0].report_id
     assert alt_alert.evidence.report_source_name == "Report 1"
     assert alt_alert.evidence.observed_at == observations[0].observed_at
+
+
+def test_legacy_parser_aliases_are_supported_without_fuzzy_synonyms() -> None:
+    person_id = _uuid(11)
+    observations = [
+        _observation(
+            person_id,
+            number=1,
+            label="GOT (AST)",
+            value=Decimal("50"),
+            unit="U/L",
+        ),
+        _observation(
+            person_id,
+            number=2,
+            label="尿酸",
+            value=Decimal("8"),
+            unit="mg/dL",
+        ),
+        _observation(
+            person_id,
+            number=3,
+            label="UricAcid",
+            value=Decimal("8"),
+            unit="mg/dL",
+        ),
+    ]
+
+    result = build_risk_alerts_input([], observations, person_id=person_id, height_cm=None)
+
+    assert [alert.rule_code for alert in result.alerts] == ["UA_HIGH", "LIVER_AST_HIGH"]
+    assert result.alerts[0].evidence.observation_id == observations[1].id
+    assert result.alerts[1].evidence.observation_id == observations[0].id
+
+
+def test_missing_or_non_finite_lab_values_preserve_absence() -> None:
+    person_id = _uuid(12)
+    observations = [
+        _observation(
+            person_id,
+            number=1,
+            label="HDL",
+            value=None,
+            unit="mg/dL",
+        ),
+        _observation(
+            person_id,
+            number=2,
+            label="HDL",
+            value=Decimal("NaN"),
+            unit="mg/dL",
+        ),
+    ]
+
+    result = build_risk_alerts_input([], observations, person_id=person_id, height_cm=None)
+
+    assert result.alerts == ()
 
 
 def test_person_scope_missing_inputs_and_pending_reports_do_not_emit_alerts() -> None:
@@ -288,3 +346,5 @@ def test_application_service_wires_person_sources_without_writes() -> None:
         "LIVER_ALT_HIGH",
     ]
     assert all(alert.evidence.person_id == person_id for alert in result.risk_alerts.alerts)
+    assert result.risk_alerts.alerts[1].evidence.source_kind == "health_metric"
+    assert result.risk_alerts.alerts[2].evidence.source_kind == "lab_report"

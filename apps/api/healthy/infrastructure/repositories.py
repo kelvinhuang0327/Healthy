@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -169,6 +169,8 @@ class SymptomLogRepository:
         occurred_at: datetime,
         severity: int,
         duration_minutes: int | None,
+        estimated_start_date: date | None,
+        estimated_duration_days: int | None,
         note: str | None,
     ) -> SymptomLog:
         symptom_log = SymptomLog(
@@ -177,6 +179,8 @@ class SymptomLogRepository:
             occurred_at=occurred_at,
             severity=severity,
             duration_minutes=duration_minutes,
+            estimated_start_date=estimated_start_date,
+            estimated_duration_days=estimated_duration_days,
             note=note,
         )
         database_session.add(symptom_log)

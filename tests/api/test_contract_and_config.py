@@ -167,6 +167,7 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "ck_symptom_logs_symptom_trimmed",
         "ck_symptom_logs_severity_bounds",
         "ck_symptom_logs_duration_minutes_minimum",
+        "ck_symptom_logs_estimated_duration_days_bounds",
         "ck_symptom_logs_note_length",
     }
     assert {index["name"] for index in inspector.get_indexes("health_actions")} >= {

@@ -1272,6 +1272,31 @@
             ],
             "title": "Duration Minutes"
           },
+          "estimated_duration_days": {
+            "anyOf": [
+              {
+                "maximum": 36500.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Duration Days"
+          },
+          "estimated_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Start Date"
+          },
           "note": {
             "anyOf": [
               {
@@ -1328,6 +1353,29 @@
             ],
             "title": "Duration Minutes"
           },
+          "estimated_duration_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Duration Days"
+          },
+          "estimated_start_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Start Date"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -1370,6 +1418,8 @@
           "occurred_at",
           "severity",
           "duration_minutes",
+          "estimated_start_date",
+          "estimated_duration_days",
           "note",
           "created_at"
         ],

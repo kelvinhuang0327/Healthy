@@ -50,6 +50,8 @@ export type SymptomLog = {
   occurred_at: string;
   severity: number;
   duration_minutes: number | null;
+  estimated_start_date: string | null;
+  estimated_duration_days: number | null;
   note: string | null;
   created_at: string;
 };
@@ -272,6 +274,8 @@ export const api = {
       occurred_at: string;
       severity: number;
       duration_minutes: number | null;
+      estimated_start_date: string | null;
+      estimated_duration_days: number | null;
       note: string | null;
     },
   ) =>

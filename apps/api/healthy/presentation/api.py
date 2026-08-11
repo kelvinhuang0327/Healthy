@@ -351,6 +351,8 @@ def post_symptom_log(
             occurred_at=payload.occurred_at,
             severity=payload.severity,
             duration_minutes=payload.duration_minutes,
+            estimated_start_date=payload.estimated_start_date,
+            estimated_duration_days=payload.estimated_duration_days,
             note=payload.note,
         )
     except services.SymptomLogIntegrityError as error:

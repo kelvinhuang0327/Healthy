@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -242,6 +243,12 @@ class SymptomLog(Base):
             name="duration_minutes_minimum",
         ),
         CheckConstraint(
+            "estimated_duration_days IS NULL"
+            f" OR estimated_duration_days BETWEEN {symptoms_domain.ESTIMATED_DURATION_DAYS_MIN}"
+            f" AND {symptoms_domain.ESTIMATED_DURATION_DAYS_MAX}",
+            name="estimated_duration_days_bounds",
+        ),
+        CheckConstraint(
             f"note IS NULL OR char_length(note) <= {symptoms_domain.NOTE_MAX_LENGTH}",
             name="note_length",
         ),
@@ -268,6 +275,8 @@ class SymptomLog(Base):
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     severity: Mapped[int] = mapped_column(Integer)
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    estimated_start_date: Mapped[date | None] = mapped_column(Date)
+    estimated_duration_days: Mapped[int | None] = mapped_column(Integer)
     note: Mapped[str | None] = mapped_column(String(symptoms_domain.NOTE_MAX_LENGTH))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

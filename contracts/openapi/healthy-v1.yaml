@@ -978,6 +978,38 @@
         "title": "HealthScoreComponentSummary",
         "type": "object"
       },
+      "HealthScoreCoverageSummary": {
+        "properties": {
+          "evaluated_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evaluated Inputs",
+            "type": "array"
+          },
+          "missing_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Inputs",
+            "type": "array"
+          },
+          "unsupported_sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unsupported Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "evaluated_inputs",
+          "missing_inputs",
+          "unsupported_sources"
+        ],
+        "title": "HealthScoreCoverageSummary",
+        "type": "object"
+      },
       "HealthScoreSummary": {
         "properties": {
           "anchor_at": {
@@ -998,6 +1030,9 @@
             },
             "title": "Components",
             "type": "array"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/HealthScoreCoverageSummary"
           },
           "data_points": {
             "title": "Data Points",
@@ -1033,6 +1068,7 @@
           "anchor_at",
           "data_points",
           "components",
+          "coverage",
           "limitations"
         ],
         "title": "HealthScoreSummary",

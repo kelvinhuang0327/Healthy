@@ -209,6 +209,12 @@ class HealthScoreComponentSummary(BaseModel):
     rationale: str
 
 
+class HealthScoreCoverageSummary(BaseModel):
+    evaluated_inputs: list[str]
+    missing_inputs: list[str]
+    unsupported_sources: list[str]
+
+
 class HealthScoreSummary(BaseModel):
     score: int
     status: Literal["stable", "monitor", "attention", "insufficient_data"]
@@ -216,6 +222,7 @@ class HealthScoreSummary(BaseModel):
     anchor_at: datetime | None
     data_points: int
     components: list[HealthScoreComponentSummary]
+    coverage: HealthScoreCoverageSummary
     limitations: str
 
 

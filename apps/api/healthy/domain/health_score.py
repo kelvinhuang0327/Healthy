@@ -74,6 +74,13 @@ class ScoreComponent:
 
 
 @dataclass(frozen=True, slots=True)
+class HealthScoreCoverage:
+    evaluated_inputs: tuple[str, ...]
+    missing_inputs: tuple[str, ...]
+    unsupported_sources: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class HealthScore:
     score: int
     status: HealthScoreStatus
@@ -81,6 +88,7 @@ class HealthScore:
     anchor_at: datetime | None
     data_points: int
     components: tuple[ScoreComponent, ...]
+    coverage: HealthScoreCoverage
     limitations: str
 
 
@@ -287,6 +295,54 @@ def _component(
     )
 
 
+def _build_coverage(
+    *,
+    metrics: list[MetricSnapshot],
+    named_labs: Mapping[str, NamedLabSnapshot | None],
+    symptom_durations: list[SymptomDurationSnapshot],
+    height_cm: Decimal | None,
+) -> HealthScoreCoverage:
+    evaluated_inputs: list[str] = []
+    missing_inputs: list[str] = []
+
+    def register_input(name: str, is_present: bool) -> None:
+        (evaluated_inputs if is_present else missing_inputs).append(name)
+
+    register_input(
+        "blood_pressure",
+        any(
+            metric.systolic_bp_mm_hg is not None or metric.diastolic_bp_mm_hg is not None
+            for metric in metrics
+        ),
+    )
+    register_input(
+        "blood_glucose",
+        any(metric.blood_glucose_mg_dl is not None for metric in metrics),
+    )
+    register_input("steps", any(metric.steps is not None for metric in metrics))
+    register_input("sleep_hours", any(metric.sleep_hours is not None for metric in metrics))
+    register_input("weight_kg", any(metric.weight_kg is not None for metric in metrics))
+    register_input("height_cm", height_cm is not None)
+    register_input("named_labs", any(value is not None for value in named_labs.values()))
+    register_input("symptom_duration_days", bool(symptom_durations))
+
+    # The application always evaluates the already-merged Safe Route B provider,
+    # including when it returns no matching alerts. An empty result is not a
+    # claim that excluded legacy producers were healthy or risk-free.
+    evaluated_inputs.append("safe_route_b_risk_alerts")
+
+    return HealthScoreCoverage(
+        evaluated_inputs=tuple(evaluated_inputs),
+        missing_inputs=tuple(missing_inputs),
+        unsupported_sources=(
+            "ai_summary",
+            "ai_generated_alerts",
+            "external_metric_alerts",
+            "unsupported_chronic_risk_alerts",
+        ),
+    )
+
+
 def build_health_score(
     *,
     metrics: Iterable[MetricSnapshot],
@@ -298,12 +354,12 @@ def build_health_score(
     lookback_days: int = LOOKBACK_DAYS,
     symptoms: Iterable[SymptomSnapshot] | None = None,
 ) -> HealthScore:
-    """Port the immutable PersonalHealthOS score contract into Healthy.
+    """Calculate Healthy's deterministic V1 score from person-owned facts.
 
-    The formula, thresholds, weights, rounding, rule penalties, and missing
-    behavior below mirror commit 684a19dbc2667d8924873af40835aa89c144e4c0.
-    Healthy supplies only person-scoped persisted facts; this function never
-    writes derived score state.
+    Supported formula, threshold, weight, rounding, rule-penalty, and missing
+    behavior are source-backed where Healthy has the corresponding input. The
+    function never fabricates excluded legacy alert evidence or writes derived
+    score state.
     """
     if lookback_days < 0:
         raise ValueError("lookback_days must not be negative")
@@ -375,7 +431,7 @@ def build_health_score(
     duration_evidence_ids = tuple(row.id for row in long_term_rows)
     overall_evidence_ids = _unique_ids([*alert_evidence_ids, *duration_evidence_ids])
     overall_rationale = (
-        f"Legacy overall weighting is 40% cardiovascular, 35% metabolic, and 25% activity. "
+        f"Healthy V1 overall weighting is 40% cardiovascular, 35% metabolic, and 25% activity. "
         f"Applied {overall_penalty} overall point(s): {len(alerts)} active risk alert(s) "
         f"and {len(long_term_rows)} long-term symptom record(s)."
     )
@@ -442,6 +498,12 @@ def build_health_score(
     ]
     present_lab_count = sum(value is not None for value in labs.values())
     data_points = len(valid_metrics) + present_lab_count + len(duration_rows)
+    coverage = _build_coverage(
+        metrics=valid_metrics,
+        named_labs=labs,
+        symptom_durations=duration_rows,
+        height_cm=height_cm,
+    )
     return HealthScore(
         score=overall_score,
         status=_status(overall_score),
@@ -449,8 +511,12 @@ def build_health_score(
         anchor_at=max(timestamps) if timestamps else None,
         data_points=data_points,
         components=components,
+        coverage=coverage,
         limitations=(
-            "Missing legacy inputs receive no penalty. This is a deterministic, "
-            "non-diagnostic product signal, not medical advice."
+            "Healthy Deterministic Health Score V1 evaluates current Healthy "
+            "deterministic inputs only. Missing ordinary inputs receive no penalty. "
+            "AI summaries, AI-generated alerts, external-metric alerts, and "
+            "unsupported chronic risk alerts are unavailable and not evaluated. "
+            "This is a non-diagnostic product signal, not medical advice."
         ),
     )

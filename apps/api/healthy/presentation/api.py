@@ -36,6 +36,7 @@ from healthy.presentation.schemas import (
     HealthReportDetail,
     HealthReportSummary,
     HealthScoreComponentSummary,
+    HealthScoreCoverageSummary,
     HealthScoreSummary,
     HistorySourceSummary,
     InsightEvidenceSummary,
@@ -369,6 +370,11 @@ def get_health_score(
             )
             for component in result.components
         ],
+        coverage=HealthScoreCoverageSummary(
+            evaluated_inputs=list(result.coverage.evaluated_inputs),
+            missing_inputs=list(result.coverage.missing_inputs),
+            unsupported_sources=list(result.coverage.unsupported_sources),
+        ),
         limitations=result.limitations,
     )
 

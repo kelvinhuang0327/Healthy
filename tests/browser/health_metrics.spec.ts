@@ -63,6 +63,10 @@ test("selected Person can log a health metric and see it in newest-first history
   await expect(firstCard).toContainText("After breakfast");
   await expect(page.getByTestId("health-score-value")).toHaveText("97");
   await expect(page.getByTestId("health-score-status")).toHaveText("stable");
+  await expect(page.getByTestId("health-score-coverage")).toContainText("Evaluated:");
+  await expect(page.getByTestId("health-score-coverage")).toContainText(
+    "Unavailable / not evaluated",
+  );
 
   await form.locator('input[name="heart_rate_bpm"]').fill("65");
   await form.getByRole("button", { name: "Save metric" }).click();

@@ -46,7 +46,7 @@ def _metric(
     )
 
 
-def test_legacy_fixture_preserves_formula_weights_rules_and_evidence() -> None:
+def test_supported_fixture_preserves_formula_weights_rules_and_evidence() -> None:
     result = build_health_score(
         metrics=[
             _metric(
@@ -165,7 +165,7 @@ def test_duration_boundary_risk_alert_and_height_semantics_are_deterministic() -
     )
 
 
-def test_health_score_endpoint_uses_legacy_missing_behavior(client: TestClient) -> None:
+def test_health_score_endpoint_uses_supported_missing_behavior(client: TestClient) -> None:
     assert register(client).status_code == 201
     person_id = client.get("/v1/persons").json()[0]["id"]
 
@@ -184,9 +184,26 @@ def test_health_score_endpoint_uses_legacy_missing_behavior(client: TestClient) 
         "overall",
     ]
     assert all(component["points"] == 100 for component in body["components"])
+    assert body["coverage"]["evaluated_inputs"] == ["safe_route_b_risk_alerts"]
+    assert set(body["coverage"]["missing_inputs"]) == {
+        "blood_pressure",
+        "blood_glucose",
+        "steps",
+        "sleep_hours",
+        "weight_kg",
+        "height_cm",
+        "named_labs",
+        "symptom_duration_days",
+    }
+    assert body["coverage"]["unsupported_sources"] == [
+        "ai_summary",
+        "ai_generated_alerts",
+        "external_metric_alerts",
+        "unsupported_chronic_risk_alerts",
+    ]
 
 
-def test_health_score_endpoint_wires_all_legacy_inputs_and_provenance(
+def test_health_score_endpoint_wires_healthy_inputs_and_provenance(
     client: TestClient,
 ) -> None:
     assert register(client).status_code == 201
@@ -279,6 +296,37 @@ def test_health_score_endpoint_wires_all_legacy_inputs_and_provenance(
     assert metric_id in components["overall"]["evidence_ids"]
     assert observation_id in components["overall"]["evidence_ids"]
     assert symptom_id in components["overall"]["evidence_ids"]
+    assert body["coverage"]["missing_inputs"] == []
+    assert "safe_route_b_risk_alerts" in body["coverage"]["evaluated_inputs"]
+
+
+def test_366_day_symptom_uses_healthy_v1_without_legacy_parity_adjustment() -> None:
+    result = build_health_score(
+        metrics=[],
+        symptom_durations=[
+            SymptomDurationSnapshot(
+                id=_uuid(366),
+                occurred_at=NOW,
+                estimated_duration_days=366,
+            )
+        ],
+        now=NOW,
+    )
+
+    # The excluded full legacy pipeline would contribute a separate -3 alert
+    # in this fixture; Healthy V1 intentionally does not fabricate that source.
+    assert result.score == 92
+    assert result.components[-1].penalty == 8
+    assert result.coverage.evaluated_inputs == (
+        "symptom_duration_days",
+        "safe_route_b_risk_alerts",
+    )
+    assert result.coverage.unsupported_sources == (
+        "ai_summary",
+        "ai_generated_alerts",
+        "external_metric_alerts",
+        "unsupported_chronic_risk_alerts",
+    )
 
 
 def test_health_score_is_deterministic_and_owner_scoped(client: TestClient) -> None:

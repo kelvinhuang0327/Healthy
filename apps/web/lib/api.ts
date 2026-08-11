@@ -52,6 +52,12 @@ export type HealthScoreComponent = {
   rationale: string;
 };
 
+export type HealthScoreCoverage = {
+  evaluated_inputs: string[];
+  missing_inputs: string[];
+  unsupported_sources: string[];
+};
+
 export type HealthScore = {
   score: number;
   status: "stable" | "monitor" | "attention" | "insufficient_data";
@@ -59,6 +65,7 @@ export type HealthScore = {
   anchor_at: string | null;
   data_points: number;
   components: HealthScoreComponent[];
+  coverage: HealthScoreCoverage;
   limitations: string;
 };
 

@@ -611,6 +611,18 @@ export default function Home() {
                       ))}
                     </ul>
                   ) : null}
+                  <div className="muted" data-testid="health-score-coverage">
+                    <strong>Coverage</strong>
+                    <p>
+                      Evaluated: {healthScore.coverage.evaluated_inputs.join(", ") || "none"}
+                    </p>
+                    <p>
+                      Missing ordinary data: {healthScore.coverage.missing_inputs.join(", ") || "none"}
+                    </p>
+                    <p>
+                      Unavailable / not evaluated: {healthScore.coverage.unsupported_sources.join(", ")}
+                    </p>
+                  </div>
                   <p className="muted">{healthScore.limitations}</p>
                 </>
               ) : (

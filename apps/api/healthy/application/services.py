@@ -306,11 +306,15 @@ def get_health_score(
     owner_account_id: uuid.UUID,
     person_id: uuid.UUID,
 ) -> health_score_domain.HealthScore | None:
-    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
-    if person is None:
+    now = datetime.now(UTC)
+    inputs = get_health_score_inputs(
+        database_session,
+        owner_account_id=owner_account_id,
+        person_id=person_id,
+        now=now,
+    )
+    if inputs is None:
         return None
-    metrics = HealthMetricRepository.list_for_person(database_session, person.id)
-    symptoms = SymptomLogRepository.list_for_person(database_session, person.id)
     return health_score_domain.build_health_score(
         metrics=[
             health_score_domain.MetricSnapshot(
@@ -321,17 +325,50 @@ def get_health_score(
                 heart_rate_bpm=metric.heart_rate_bpm,
                 weight_kg=metric.weight_kg,
                 blood_glucose_mg_dl=metric.blood_glucose_mg_dl,
+                created_at=metric.created_at,
+                steps=metric.steps,
+                sleep_hours=metric.sleep_hours,
             )
-            for metric in metrics
+            for metric in inputs.metrics
         ],
-        symptoms=[
-            health_score_domain.SymptomSnapshot(
-                id=symptom.id,
-                occurred_at=symptom.occurred_at,
-                severity=symptom.severity,
+        named_labs={
+            key: (
+                None
+                if value is None
+                else health_score_domain.NamedLabSnapshot(
+                    value=value.value,
+                    evidence_ids=(value.evidence.source_id, value.evidence.report_id),
+                    observed_at=value.evidence.observed_at,
+                )
             )
-            for symptom in symptoms
+            for key, value in inputs.named_labs.values.items()
+        },
+        risk_alerts=[
+            health_score_domain.RiskAlertSnapshot(
+                evidence_ids=tuple(
+                    evidence_id
+                    for evidence_id in (
+                        alert.evidence.source_id,
+                        alert.evidence.observation_id,
+                        alert.evidence.report_id,
+                    )
+                    if evidence_id is not None
+                ),
+                observed_at=alert.evidence.observed_at,
+            )
+            for alert in inputs.risk_alerts.alerts
         ],
+        symptom_durations=[
+            health_score_domain.SymptomDurationSnapshot(
+                id=observation.id,
+                occurred_at=observation.occurred_at,
+                estimated_duration_days=observation.estimated_duration_days,
+            )
+            for observation in inputs.symptom_duration.observations
+        ],
+        height_cm=inputs.height_cm,
+        now=now,
+        lookback_days=health_score_inputs.LEGACY_LAB_LOOKBACK_DAYS,
     )
 
 

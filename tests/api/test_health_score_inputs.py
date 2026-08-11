@@ -325,6 +325,23 @@ def test_application_read_uses_confirmed_person_scope_and_zero_writes(client: Te
     account_id = uuid.UUID(registration_body["account"]["id"])
     person_id = uuid.UUID(registration_body["default_person"]["id"])
 
+    height = client.patch(
+        f"/v1/persons/{person_id}/profile",
+        headers=csrf_headers(client),
+        json={"height_cm": 170},
+    )
+    assert height.status_code == 200
+    metric = client.post(
+        f"/v1/persons/{person_id}/metrics",
+        headers=csrf_headers(client),
+        json={
+            "recorded_at": NOW.isoformat(),
+            "steps": 0,
+            "sleep_hours": 6.25,
+        },
+    )
+    assert metric.status_code == 201
+
     confirmed = client.post(
         f"/v1/persons/{person_id}/reports",
         headers=csrf_headers(client),
@@ -482,6 +499,10 @@ def test_application_read_uses_confirmed_person_scope_and_zero_writes(client: Te
 
     assert after == before
     assert result is not None
+    assert result.height_cm == Decimal("170.00")
+    assert len(result.metrics) == 1
+    assert result.metrics[0].steps == 0
+    assert result.metrics[0].sleep_hours == Decimal("6.25")
     assert result.named_labs.value_for("LDL").value == Decimal("110.0000")
     assert result.named_labs.value_for("HDL") is None
     assert result.named_labs.value_for("ALT") is None

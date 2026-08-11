@@ -201,7 +201,7 @@ class HealthMetricSummary(BaseModel):
 
 
 class HealthScoreComponentSummary(BaseModel):
-    kind: Literal["blood_pressure", "heart_rate", "blood_glucose", "recent_symptoms"]
+    kind: Literal["cardiovascular", "metabolic", "activity", "weight", "overall"]
     label: str
     points: int
     penalty: int
@@ -210,7 +210,7 @@ class HealthScoreComponentSummary(BaseModel):
 
 
 class HealthScoreSummary(BaseModel):
-    score: int | None
+    score: int
     status: Literal["stable", "monitor", "attention", "insufficient_data"]
     rule_version: str
     anchor_at: datetime | None

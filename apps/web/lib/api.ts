@@ -44,7 +44,7 @@ export type HealthMetric = {
 };
 
 export type HealthScoreComponent = {
-  kind: "blood_pressure" | "heart_rate" | "blood_glucose" | "recent_symptoms";
+  kind: "cardiovascular" | "metabolic" | "activity" | "weight" | "overall";
   label: string;
   points: number;
   penalty: number;
@@ -53,7 +53,7 @@ export type HealthScoreComponent = {
 };
 
 export type HealthScore = {
-  score: number | null;
+  score: number;
   status: "stable" | "monitor" | "attention" | "insufficient_data";
   rule_version: string;
   anchor_at: string | null;

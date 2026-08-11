@@ -1,116 +1,297 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from conftest import csrf_headers, register
 from fastapi.testclient import TestClient
+from healthy.domain.health_score import (
+    MetricSnapshot,
+    NamedLabSnapshot,
+    RiskAlertSnapshot,
+    SymptomDurationSnapshot,
+    build_health_score,
+)
+
+NOW = datetime(2026, 8, 11, 12, 0, tzinfo=UTC)
 
 
-def _person_id(client: TestClient) -> str:
-    return client.get("/v1/persons").json()[0]["id"]
+def _uuid(number: int) -> uuid.UUID:
+    return uuid.UUID(int=number)
 
 
-def test_health_score_is_insufficient_without_scored_data(client: TestClient) -> None:
+def _metric(
+    number: int,
+    *,
+    recorded_at: datetime = NOW,
+    systolic: int | None = None,
+    diastolic: int | None = None,
+    steps: int | None = None,
+    weight: Decimal | None = None,
+    glucose: Decimal | None = None,
+    sleep: Decimal | None = None,
+) -> MetricSnapshot:
+    return MetricSnapshot(
+        id=_uuid(number),
+        recorded_at=recorded_at,
+        systolic_bp_mm_hg=systolic,
+        diastolic_bp_mm_hg=diastolic,
+        heart_rate_bpm=None,
+        weight_kg=weight,
+        blood_glucose_mg_dl=glucose,
+        created_at=recorded_at,
+        steps=steps,
+        sleep_hours=sleep,
+    )
+
+
+def test_legacy_fixture_preserves_formula_weights_rules_and_evidence() -> None:
+    result = build_health_score(
+        metrics=[
+            _metric(
+                1,
+                recorded_at=NOW - timedelta(days=2),
+                systolic=145,
+                diastolic=90,
+                steps=0,
+                weight=Decimal("88"),
+                glucose=Decimal("130"),
+                sleep=Decimal("6"),
+            ),
+            _metric(
+                2,
+                recorded_at=NOW - timedelta(days=10),
+                systolic=135,
+                diastolic=85,
+                steps=6000,
+                weight=Decimal("80"),
+                glucose=Decimal("110"),
+                sleep=Decimal("7"),
+            ),
+        ],
+        named_labs={
+            "Total Cholesterol": NamedLabSnapshot(
+                value=Decimal("220"), evidence_ids=(_uuid(10),), observed_at=NOW
+            ),
+            "LDL": NamedLabSnapshot(
+                value=Decimal("140"), evidence_ids=(_uuid(11),), observed_at=NOW
+            ),
+            "ALT": NamedLabSnapshot(
+                value=Decimal("50"), evidence_ids=(_uuid(12),), observed_at=NOW
+            ),
+        },
+        risk_alerts=[
+            RiskAlertSnapshot(evidence_ids=(_uuid(20),), observed_at=NOW),
+            RiskAlertSnapshot(evidence_ids=(_uuid(21),), observed_at=NOW),
+            RiskAlertSnapshot(evidence_ids=(_uuid(22),), observed_at=NOW),
+        ],
+        symptom_durations=[
+            SymptomDurationSnapshot(
+                id=_uuid(30),
+                occurred_at=NOW - timedelta(days=1),
+                estimated_duration_days=180,
+            )
+        ],
+        height_cm=Decimal("170"),
+        now=NOW,
+    )
+
+    assert result.score == 54
+    assert result.status == "attention"
+    assert [component.kind for component in result.components] == [
+        "cardiovascular",
+        "metabolic",
+        "activity",
+        "weight",
+        "overall",
+    ]
+    assert [component.points for component in result.components] == [76, 66, 71, 74, 83]
+    assert result.components[-1].penalty == 17
+    assert set(result.components[-1].evidence_ids) == {
+        _uuid(20),
+        _uuid(21),
+        _uuid(22),
+        _uuid(30),
+    }
+    assert result.data_points == 6
+
+
+def test_missing_inputs_receive_no_penalty_and_zero_steps_is_not_missing() -> None:
+    missing = build_health_score(metrics=[_metric(1)], now=NOW)
+    zero_steps = build_health_score(metrics=[_metric(2, steps=0)], now=NOW)
+
+    assert missing.score == 100
+    assert [component.points for component in missing.components] == [100] * 5
+    assert zero_steps.score == 94
+    assert zero_steps.components[2].points == 77
+    assert zero_steps.components[2].evidence_ids == (_uuid(2),)
+
+
+def test_duration_boundary_risk_alert_and_height_semantics_are_deterministic() -> None:
+    below_boundary = build_health_score(
+        metrics=[_metric(1, weight=Decimal("80"))],
+        symptom_durations=[
+            SymptomDurationSnapshot(_uuid(2), NOW, 179),
+        ],
+        height_cm=Decimal("170"),
+        now=NOW,
+    )
+    at_boundary = build_health_score(
+        metrics=[_metric(1, weight=Decimal("80"))],
+        symptom_durations=[
+            SymptomDurationSnapshot(_uuid(2), NOW, 180),
+        ],
+        height_cm=Decimal("170"),
+        now=NOW,
+    )
+    with_alert = build_health_score(
+        metrics=[_metric(1, weight=Decimal("80"))],
+        risk_alerts=[RiskAlertSnapshot((_uuid(3),), NOW)],
+        height_cm=Decimal("170"),
+        now=NOW,
+    )
+
+    assert below_boundary.score == 98
+    assert at_boundary.score == 90
+    assert with_alert.score == 94
+    assert below_boundary.components[3].points == 85
+    assert below_boundary.components[2].points == 90
+    assert at_boundary == build_health_score(
+        metrics=[_metric(1, weight=Decimal("80"))],
+        symptom_durations=[SymptomDurationSnapshot(_uuid(2), NOW, 180)],
+        height_cm=Decimal("170"),
+        now=NOW,
+    )
+
+
+def test_health_score_endpoint_uses_legacy_missing_behavior(client: TestClient) -> None:
     assert register(client).status_code == 201
-    person_id = _person_id(client)
+    person_id = client.get("/v1/persons").json()[0]["id"]
 
     response = client.get(f"/v1/persons/{person_id}/health-score")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "score": None,
-        "status": "insufficient_data",
-        "rule_version": "deterministic-health-score-v1",
-        "anchor_at": None,
-        "data_points": 0,
-        "components": [],
-        "limitations": (
-            "Add a blood pressure, heart rate, blood glucose, or symptom record. "
-            "This score is a non-diagnostic product signal, not medical advice."
-        ),
-    }
+    body = response.json()
+    assert body["score"] == 100
+    assert body["status"] == "stable"
+    assert body["data_points"] == 0
+    assert [component["kind"] for component in body["components"]] == [
+        "cardiovascular",
+        "metabolic",
+        "activity",
+        "weight",
+        "overall",
+    ]
+    assert all(component["points"] == 100 for component in body["components"])
 
 
-def test_health_score_is_deterministic_and_explains_latest_evidence(
+def test_health_score_endpoint_wires_all_legacy_inputs_and_provenance(
     client: TestClient,
 ) -> None:
     assert register(client).status_code == 201
-    person_id = _person_id(client)
-    older = datetime(2026, 1, 1, tzinfo=UTC)
-    newer = datetime(2026, 1, 2, tzinfo=UTC)
-    old_metric = client.post(
-        f"/v1/persons/{person_id}/metrics",
-        headers=csrf_headers(client),
-        json={"recorded_at": older.isoformat(), "heart_rate_bpm": 250},
+    person_id = client.get("/v1/persons").json()[0]["id"]
+    assert (
+        client.patch(
+            f"/v1/persons/{person_id}/profile",
+            headers=csrf_headers(client),
+            json={"height_cm": 170},
+        ).status_code
+        == 200
     )
-    latest_metric = client.post(
+
+    metric = client.post(
         f"/v1/persons/{person_id}/metrics",
         headers=csrf_headers(client),
         json={
-            "recorded_at": newer.isoformat(),
+            "recorded_at": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
             "systolic_bp_mm_hg": 120,
             "diastolic_bp_mm_hg": 80,
-            "heart_rate_bpm": 72,
-            "blood_glucose_mg_dl": 95.0,
-            "weight_kg": 70.0,
+            "steps": 6000,
+            "weight_kg": 80,
+            "blood_glucose_mg_dl": 100,
+            "sleep_hours": 7,
         },
     )
-    assert old_metric.status_code == latest_metric.status_code == 201
+    assert metric.status_code == 201
+    metric_id = metric.json()["id"]
+
+    report = client.post(
+        f"/v1/persons/{person_id}/reports",
+        headers=csrf_headers(client),
+        json={
+            "schema_version": "healthy.health-report.v1",
+            "source_name": "Score fixture",
+            "reported_at": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+            "observations": [
+                {
+                    "code": "LDL",
+                    "display_name": "LDL",
+                    "value_numeric": 140,
+                    "unit": "mg/dL",
+                    "observed_at": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+                }
+            ],
+        },
+    )
+    assert report.status_code == 201
+    report_id = report.json()["id"]
+    observation_id = report.json()["observations"][0]["id"]
+    assert (
+        client.post(
+            f"/v1/persons/{person_id}/reports/{report_id}/confirm",
+            headers=csrf_headers(client),
+        ).status_code
+        == 200
+    )
+
     symptom = client.post(
         f"/v1/persons/{person_id}/symptoms",
         headers=csrf_headers(client),
         json={
-            "symptom": "Headache",
-            "occurred_at": (newer + timedelta(days=1)).isoformat(),
+            "symptom": "Persistent headache",
+            "occurred_at": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
             "severity": 3,
+            "estimated_start_date": "2026-01-01",
+            "estimated_duration_days": 180,
         },
     )
     assert symptom.status_code == 201
+    symptom_id = symptom.json()["id"]
+
+    body = client.get(f"/v1/persons/{person_id}/health-score").json()
+    components = {component["kind"]: component for component in body["components"]}
+
+    assert body["score"] == 79
+    assert body["status"] == "monitor"
+    assert body["data_points"] == 3
+    assert [
+        components[kind]["points"]
+        for kind in (
+            "cardiovascular",
+            "metabolic",
+            "activity",
+            "weight",
+            "overall",
+        )
+    ] == [100, 97, 90, 85, 83]
+    assert observation_id in components["metabolic"]["evidence_ids"]
+    assert metric_id in components["overall"]["evidence_ids"]
+    assert observation_id in components["overall"]["evidence_ids"]
+    assert symptom_id in components["overall"]["evidence_ids"]
+
+
+def test_health_score_is_deterministic_and_owner_scoped(client: TestClient) -> None:
+    assert register(client, email="owner-a@example.com").status_code == 201
+    person_id = client.get("/v1/persons").json()[0]["id"]
 
     first = client.get(f"/v1/persons/{person_id}/health-score")
     second = client.get(f"/v1/persons/{person_id}/health-score")
 
     assert first.status_code == second.status_code == 200
     assert first.json() == second.json()
-    body = first.json()
-    assert body["status"] == "stable"
-    assert body["score"] == 98
-    assert body["data_points"] == 3
-    assert [component["kind"] for component in body["components"]] == [
-        "blood_pressure",
-        "heart_rate",
-        "blood_glucose",
-        "recent_symptoms",
-    ]
-    assert body["components"][0]["evidence_ids"] == [latest_metric.json()["id"]]
-    assert body["components"][3]["evidence_ids"] == [symptom.json()["id"]]
 
-
-def test_health_score_does_not_score_weight_without_personal_context(
-    client: TestClient,
-) -> None:
-    assert register(client).status_code == 201
-    person_id = _person_id(client)
-    created = client.post(
-        f"/v1/persons/{person_id}/metrics",
-        headers=csrf_headers(client),
-        json={"recorded_at": datetime(2026, 1, 1, tzinfo=UTC).isoformat(), "weight_kg": 70},
-    )
-    assert created.status_code == 201
-
-    body = client.get(f"/v1/persons/{person_id}/health-score").json()
-
-    assert body["score"] is None
-    assert body["status"] == "insufficient_data"
-    assert body["data_points"] == 1
-
-
-def test_health_score_is_owner_scoped(client: TestClient) -> None:
-    assert register(client, email="owner-a@example.com").status_code == 201
-    person_id = _person_id(client)
     other = TestClient(client.app, base_url="http://127.0.0.1:3000")
     assert register(other, email="owner-b@example.com").status_code == 201
-
-    response = other.get(f"/v1/persons/{person_id}/health-score")
-
-    assert response.status_code == 404
+    foreign = other.get(f"/v1/persons/{person_id}/health-score")
+    assert foreign.status_code == 404

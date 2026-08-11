@@ -36,7 +36,7 @@ test("selected Person can log a health metric and see it in newest-first history
   const personId = await register(page, email, "Metrics Owner");
   await page.getByTestId("person-card").first().click();
   await expect(page.getByTestId("selected-person-pill")).toBeVisible();
-  await expect(page.getByTestId("health-score-status")).toHaveText("insufficient data");
+  await expect(page.getByTestId("health-score-status")).toHaveText("stable");
 
   const form = page.getByTestId("metric-form");
   await form.locator('input[name="recorded_at"]').fill("2026-08-09T08:30");
@@ -61,7 +61,7 @@ test("selected Person can log a health metric and see it in newest-first history
   await expect(firstCard).toContainText("7.25 hours");
   await expect(firstCard).toContainText("2026");
   await expect(firstCard).toContainText("After breakfast");
-  await expect(page.getByTestId("health-score-value")).toHaveText("100");
+  await expect(page.getByTestId("health-score-value")).toHaveText("97");
   await expect(page.getByTestId("health-score-status")).toHaveText("stable");
 
   await form.locator('input[name="heart_rate_bpm"]').fill("65");

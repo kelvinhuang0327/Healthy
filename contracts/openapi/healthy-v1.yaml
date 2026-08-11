@@ -941,10 +941,11 @@
           },
           "kind": {
             "enum": [
-              "blood_pressure",
-              "heart_rate",
-              "blood_glucose",
-              "recent_symptoms"
+              "cardiovascular",
+              "metabolic",
+              "activity",
+              "weight",
+              "overall"
             ],
             "title": "Kind",
             "type": "string"
@@ -1011,15 +1012,8 @@
             "type": "string"
           },
           "score": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Score"
+            "title": "Score",
+            "type": "integer"
           },
           "status": {
             "enum": [

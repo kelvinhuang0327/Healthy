@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -211,6 +211,12 @@ class SymptomLogCreate(BaseModel):
         default=None,
         ge=symptoms_domain.DURATION_MINUTES_MIN,
     )
+    estimated_start_date: date | None = None
+    estimated_duration_days: int | None = Field(
+        default=None,
+        ge=symptoms_domain.ESTIMATED_DURATION_DAYS_MIN,
+        le=symptoms_domain.ESTIMATED_DURATION_DAYS_MAX,
+    )
     note: str | None = Field(default=None, max_length=symptoms_domain.NOTE_MAX_LENGTH)
 
     @field_validator("symptom")
@@ -238,6 +244,8 @@ class SymptomLogSummary(BaseModel):
     occurred_at: datetime
     severity: int
     duration_minutes: int | None
+    estimated_start_date: date | None
+    estimated_duration_days: int | None
     note: str | None
     created_at: datetime
 

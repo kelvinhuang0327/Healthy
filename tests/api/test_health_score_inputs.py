@@ -18,6 +18,7 @@ from healthy.infrastructure.models import (
     HealthReportModel,
     HealthReportObservationModel,
     Person,
+    SymptomLog,
 )
 from sqlalchemy import select
 
@@ -372,6 +373,20 @@ def test_application_read_uses_confirmed_person_scope_and_zero_writes(client: Te
     )
     assert pending.status_code == 201
 
+    symptom = client.post(
+        f"/v1/persons/{person_id}/symptoms",
+        headers=csrf_headers(client),
+        json={
+            "symptom": "Persistent headache",
+            "occurred_at": (NOW - timedelta(days=2)).isoformat(),
+            "severity": 3,
+            "estimated_start_date": "2026-01-01",
+            "estimated_duration_days": 240,
+        },
+    )
+    assert symptom.status_code == 201
+    symptom_id = uuid.UUID(symptom.json()["id"])
+
     other = TestClient(client.app, base_url=ORIGIN)
     other_registration = register(other, email="score-input-other@example.com")
     assert other_registration.status_code == 201
@@ -403,6 +418,17 @@ def test_application_read_uses_confirmed_person_scope_and_zero_writes(client: Te
         ).status_code
         == 200
     )
+    other_symptom = other.post(
+        f"/v1/persons/{other_person_id}/symptoms",
+        headers=csrf_headers(other),
+        json={
+            "symptom": "Other person's symptom",
+            "occurred_at": (NOW - timedelta(days=1)).isoformat(),
+            "severity": 4,
+            "estimated_duration_days": 365,
+        },
+    )
+    assert other_symptom.status_code == 201
 
     database = Database(DATABASE_URL)
 
@@ -431,6 +457,16 @@ def test_application_read_uses_confirmed_person_scope_and_zero_writes(client: Te
                         ).order_by(HealthReportObservationModel.id)
                     ).tuples()
                 ),
+                list(
+                    database_session.execute(
+                        select(
+                            SymptomLog.id,
+                            SymptomLog.person_id,
+                            SymptomLog.estimated_duration_days,
+                            SymptomLog.created_at,
+                        ).order_by(SymptomLog.id)
+                    ).tuples()
+                ),
             )
 
     before = snapshot()
@@ -449,10 +485,18 @@ def test_application_read_uses_confirmed_person_scope_and_zero_writes(client: Te
     assert result.named_labs.value_for("LDL").value == Decimal("110.0000")
     assert result.named_labs.value_for("HDL") is None
     assert result.named_labs.value_for("ALT") is None
+    assert result.symptom_duration.status == "available"
+    assert result.symptom_duration.long_term_symptom_count == 1
+    assert [observation.id for observation in result.symptom_duration.long_term_symptoms] == [
+        symptom_id
+    ]
 
 
-def test_symptom_duration_is_explicitly_deferred_for_the_current_schema() -> None:
+def test_symptom_duration_is_missing_without_persisted_timing_facts() -> None:
     result = build_health_score_inputs([], person_id=_uuid(9), now=NOW)
 
-    assert result.symptom_duration.status == "deferred"
-    assert result.symptom_duration.reason == "SYMPTOM_DURATION_DEFERRED_DATA_GAP"
+    assert result.symptom_duration.status == "missing"
+    assert result.symptom_duration.unit == "days"
+    assert result.symptom_duration.symptom_count == 0
+    assert result.symptom_duration.long_term_symptom_count == 0
+    assert result.symptom_duration.missing_symptom_ids == ()

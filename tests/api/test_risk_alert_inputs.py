@@ -322,19 +322,25 @@ def test_application_service_wires_person_sources_without_writes() -> None:
             return_value=[metric],
         ) as list_metrics:
             with patch.object(
-                services.HealthReportRepository,
-                "list_confirmed_observations_for_person",
-                return_value=[observation],
-            ) as list_observations:
-                result = services.get_health_score_inputs(
-                    session,
-                    owner_account_id=owner_id,
-                    person_id=person_id,
-                    now=NOW,
-                )
+                services.SymptomLogRepository,
+                "list_for_person",
+                return_value=[],
+            ) as list_symptoms:
+                with patch.object(
+                    services.HealthReportRepository,
+                    "list_confirmed_observations_for_person",
+                    return_value=[observation],
+                ) as list_observations:
+                    result = services.get_health_score_inputs(
+                        session,
+                        owner_account_id=owner_id,
+                        person_id=person_id,
+                        now=NOW,
+                    )
 
     get_person.assert_called_once_with(session, owner_id, person_id)
     list_metrics.assert_called_once_with(session, person_id)
+    list_symptoms.assert_called_once_with(session, person_id)
     list_observations.assert_called_once_with(session, person_id)
     session.add.assert_not_called()
     session.commit.assert_not_called()

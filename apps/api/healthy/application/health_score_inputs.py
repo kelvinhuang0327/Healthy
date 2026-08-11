@@ -8,14 +8,16 @@ from decimal import Decimal
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
-from healthy.infrastructure.models import HealthMetric, HealthReportObservationModel
+from healthy.application.symptom_duration import (
+    SymptomDurationInput,
+    build_symptom_duration_input,
+)
+from healthy.infrastructure.models import HealthMetric, HealthReportObservationModel, SymptomLog
 
 if TYPE_CHECKING:
     from healthy.application.risk_alert_inputs import RiskAlertsInput
 
 LEGACY_LAB_LOOKBACK_DAYS = 30
-SYMPTOM_DURATION_DEFERRED_DATA_GAP = "SYMPTOM_DURATION_DEFERRED_DATA_GAP"
-
 LegacyLabKey = Literal[
     "Total Cholesterol",
     "LDL",
@@ -82,12 +84,6 @@ class NamedLabsInput:
 
     def value_for(self, key: LegacyLabKey) -> NamedLabValue | None:
         return self.values[key]
-
-
-@dataclass(frozen=True, slots=True)
-class SymptomDurationInput:
-    status: Literal["deferred"]
-    reason: Literal["SYMPTOM_DURATION_DEFERRED_DATA_GAP"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +186,7 @@ def build_health_score_inputs(
     now: datetime,
     lookback_days: int = LEGACY_LAB_LOOKBACK_DAYS,
     metrics: Iterable[HealthMetric] = (),
+    symptoms: Iterable[SymptomLog] = (),
     height_cm: Decimal | None = None,
 ) -> HealthScoreInputs:
     """Build the reusable score-input read model without persisting derived data."""
@@ -203,6 +200,7 @@ def build_health_score_inputs(
 
     observation_list = tuple(observations)
     metric_list = tuple(metrics)
+    symptom_list = tuple(symptoms)
 
     return HealthScoreInputs(
         named_labs=build_named_labs_input(
@@ -216,9 +214,9 @@ def build_health_score_inputs(
             person_id=person_id,
             height_cm=height_cm,
         ),
-        symptom_duration=SymptomDurationInput(
-            status="deferred",
-            reason="SYMPTOM_DURATION_DEFERRED_DATA_GAP",
+        symptom_duration=build_symptom_duration_input(
+            symptom_list,
+            person_id=person_id,
         ),
     )
 

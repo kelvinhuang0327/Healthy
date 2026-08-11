@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -309,6 +309,8 @@ def create_symptom_log(
     severity: int,
     duration_minutes: int | None,
     note: str | None,
+    estimated_start_date: date | None = None,
+    estimated_duration_days: int | None = None,
 ) -> SymptomLog | None:
     person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
     if person is None:
@@ -320,6 +322,8 @@ def create_symptom_log(
         occurred_at=occurred_at,
         severity=severity,
         duration_minutes=duration_minutes,
+        estimated_start_date=estimated_start_date,
+        estimated_duration_days=estimated_duration_days,
         note=note,
     )
     try:
@@ -681,6 +685,7 @@ def get_health_score_inputs(
     if person is None:
         return None
     metrics = HealthMetricRepository.list_for_person(database_session, person.id)
+    symptoms = SymptomLogRepository.list_for_person(database_session, person.id)
     observations = HealthReportRepository.list_confirmed_observations_for_person(
         database_session,
         person.id,
@@ -691,6 +696,7 @@ def get_health_score_inputs(
         now=now,
         lookback_days=lookback_days,
         metrics=metrics,
+        symptoms=symptoms,
         height_cm=person.height_cm,
     )
 

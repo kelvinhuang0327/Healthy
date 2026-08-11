@@ -276,6 +276,7 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const occurredAtLocal = String(form.get("occurred_at") ?? "");
+    const estimatedStartDate = String(form.get("estimated_start_date") ?? "").trim();
     const note = String(form.get("note") ?? "").trim();
     try {
       await api.createSymptomLog(personId, {
@@ -283,6 +284,8 @@ export default function Home() {
         occurred_at: new Date(occurredAtLocal).toISOString(),
         severity: Number(form.get("severity")),
         duration_minutes: numberFieldOrNull(form, "duration_minutes"),
+        estimated_start_date: estimatedStartDate || null,
+        estimated_duration_days: numberFieldOrNull(form, "estimated_duration_days"),
         note: note || null,
       });
       formElement.reset();
@@ -717,6 +720,19 @@ export default function Home() {
                   />
                 </label>
                 <label>
+                  Estimated start date (optional)
+                  <input name="estimated_start_date" type="date" />
+                </label>
+                <label>
+                  Estimated duration (days, optional)
+                  <input
+                    name="estimated_duration_days"
+                    type="number"
+                    min={1}
+                    max={36500}
+                  />
+                </label>
+                <label>
                   Note
                   <input name="note" maxLength={2000} />
                 </label>
@@ -744,6 +760,9 @@ export default function Home() {
                       <li>Severity {symptomLog.severity}/5</li>
                       {symptomLog.duration_minutes !== null ? (
                         <li>{symptomLog.duration_minutes} minutes</li>
+                      ) : null}
+                      {symptomLog.estimated_duration_days !== null ? (
+                        <li>Estimated {symptomLog.estimated_duration_days} days</li>
                       ) : null}
                     </ul>
                     {symptomLog.note ? <p>{symptomLog.note}</p> : null}

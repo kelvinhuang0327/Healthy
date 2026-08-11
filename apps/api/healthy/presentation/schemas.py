@@ -200,6 +200,32 @@ class HealthMetricSummary(BaseModel):
     created_at: datetime
 
 
+class HealthScoreComponentSummary(BaseModel):
+    kind: Literal["cardiovascular", "metabolic", "activity", "weight", "overall"]
+    label: str
+    points: int
+    penalty: int
+    evidence_ids: list[uuid.UUID]
+    rationale: str
+
+
+class HealthScoreCoverageSummary(BaseModel):
+    evaluated_inputs: list[str]
+    missing_inputs: list[str]
+    unsupported_sources: list[str]
+
+
+class HealthScoreSummary(BaseModel):
+    score: int
+    status: Literal["stable", "monitor", "attention", "insufficient_data"]
+    rule_version: str
+    anchor_at: datetime | None
+    data_points: int
+    components: list[HealthScoreComponentSummary]
+    coverage: HealthScoreCoverageSummary
+    limitations: str
+
+
 class SymptomLogCreate(BaseModel):
     symptom: str = Field(min_length=1, max_length=symptoms_domain.SYMPTOM_MAX_LENGTH)
     occurred_at: datetime

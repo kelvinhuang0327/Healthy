@@ -35,6 +35,9 @@ from healthy.presentation.schemas import (
     HealthMetricSummary,
     HealthReportDetail,
     HealthReportSummary,
+    HealthScoreComponentSummary,
+    HealthScoreCoverageSummary,
+    HealthScoreSummary,
     HistorySourceSummary,
     InsightEvidenceSummary,
     InsightSummary,
@@ -329,6 +332,51 @@ def get_health_metric(
             detail="Metric not found",
         )
     return HealthMetricSummary.model_validate(metric)
+
+
+@router.get(
+    "/persons/{person_id}/health-score",
+    response_model=HealthScoreSummary,
+)
+def get_health_score(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthScoreSummary:
+    result = services.get_health_score(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return HealthScoreSummary(
+        score=result.score,
+        status=result.status,
+        rule_version=result.rule_version,
+        anchor_at=result.anchor_at,
+        data_points=result.data_points,
+        components=[
+            HealthScoreComponentSummary(
+                kind=component.kind,
+                label=component.label,
+                points=component.points,
+                penalty=component.penalty,
+                evidence_ids=list(component.evidence_ids),
+                rationale=component.rationale,
+            )
+            for component in result.components
+        ],
+        coverage=HealthScoreCoverageSummary(
+            evaluated_inputs=list(result.coverage.evaluated_inputs),
+            missing_inputs=list(result.coverage.missing_inputs),
+            unsupported_sources=list(result.coverage.unsupported_sources),
+        ),
+        limitations=result.limitations,
+    )
 
 
 @router.post(

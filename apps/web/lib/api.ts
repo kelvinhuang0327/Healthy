@@ -43,6 +43,32 @@ export type HealthMetric = {
   created_at: string;
 };
 
+export type HealthScoreComponent = {
+  kind: "cardiovascular" | "metabolic" | "activity" | "weight" | "overall";
+  label: string;
+  points: number;
+  penalty: number;
+  evidence_ids: string[];
+  rationale: string;
+};
+
+export type HealthScoreCoverage = {
+  evaluated_inputs: string[];
+  missing_inputs: string[];
+  unsupported_sources: string[];
+};
+
+export type HealthScore = {
+  score: number;
+  status: "stable" | "monitor" | "attention" | "insufficient_data";
+  rule_version: string;
+  anchor_at: string | null;
+  data_points: number;
+  components: HealthScoreComponent[];
+  coverage: HealthScoreCoverage;
+  limitations: string;
+};
+
 export type SymptomLog = {
   id: string;
   person_id: string;
@@ -245,6 +271,8 @@ export const api = {
     }),
   healthMetrics: (personId: string) =>
     request<HealthMetric[]>(`/persons/${personId}/metrics`),
+  healthScore: (personId: string) =>
+    request<HealthScore>(`/persons/${personId}/health-score`),
   createHealthMetric: (
     personId: string,
     payload: {

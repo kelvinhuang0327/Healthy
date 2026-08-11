@@ -14,6 +14,7 @@ from healthy.application import health_score_inputs
 from healthy.application.history import HistoryItem, build_history
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
+from healthy.domain import health_score as health_score_domain
 from healthy.domain import insights as insights_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reports as reports_domain
@@ -297,6 +298,78 @@ def get_health_metric(
     metric_id: uuid.UUID,
 ) -> HealthMetric | None:
     return HealthMetricRepository.get_for_person(database_session, person_id, metric_id)
+
+
+def get_health_score(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+) -> health_score_domain.HealthScore | None:
+    now = datetime.now(UTC)
+    inputs = get_health_score_inputs(
+        database_session,
+        owner_account_id=owner_account_id,
+        person_id=person_id,
+        now=now,
+    )
+    if inputs is None:
+        return None
+    return health_score_domain.build_health_score(
+        metrics=[
+            health_score_domain.MetricSnapshot(
+                id=metric.id,
+                recorded_at=metric.recorded_at,
+                systolic_bp_mm_hg=metric.systolic_bp_mm_hg,
+                diastolic_bp_mm_hg=metric.diastolic_bp_mm_hg,
+                heart_rate_bpm=metric.heart_rate_bpm,
+                weight_kg=metric.weight_kg,
+                blood_glucose_mg_dl=metric.blood_glucose_mg_dl,
+                created_at=metric.created_at,
+                steps=metric.steps,
+                sleep_hours=metric.sleep_hours,
+            )
+            for metric in inputs.metrics
+        ],
+        named_labs={
+            key: (
+                None
+                if value is None
+                else health_score_domain.NamedLabSnapshot(
+                    value=value.value,
+                    evidence_ids=(value.evidence.source_id, value.evidence.report_id),
+                    observed_at=value.evidence.observed_at,
+                )
+            )
+            for key, value in inputs.named_labs.values.items()
+        },
+        risk_alerts=[
+            health_score_domain.RiskAlertSnapshot(
+                evidence_ids=tuple(
+                    evidence_id
+                    for evidence_id in (
+                        alert.evidence.source_id,
+                        alert.evidence.observation_id,
+                        alert.evidence.report_id,
+                    )
+                    if evidence_id is not None
+                ),
+                observed_at=alert.evidence.observed_at,
+            )
+            for alert in inputs.risk_alerts.alerts
+        ],
+        symptom_durations=[
+            health_score_domain.SymptomDurationSnapshot(
+                id=observation.id,
+                occurred_at=observation.occurred_at,
+                estimated_duration_days=observation.estimated_duration_days,
+            )
+            for observation in inputs.symptom_duration.observations
+        ],
+        height_cm=inputs.height_cm,
+        now=now,
+        lookback_days=health_score_inputs.LEGACY_LAB_LOOKBACK_DAYS,
+    )
 
 
 def create_symptom_log(

@@ -88,6 +88,8 @@ class NamedLabsInput:
 
 @dataclass(frozen=True, slots=True)
 class HealthScoreInputs:
+    metrics: tuple[HealthMetric, ...]
+    height_cm: Decimal | None
     named_labs: NamedLabsInput
     risk_alerts: RiskAlertsInput
     symptom_duration: SymptomDurationInput
@@ -203,6 +205,8 @@ def build_health_score_inputs(
     symptom_list = tuple(symptoms)
 
     return HealthScoreInputs(
+        metrics=metric_list,
+        height_cm=height_cm,
         named_labs=build_named_labs_input(
             observation_list,
             person_id=person_id,

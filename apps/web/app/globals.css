@@ -140,6 +140,59 @@ button.secondary {
   font-weight: 750;
 }
 
+.score {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.score strong {
+  font-size: 3.5rem;
+  letter-spacing: -0.08em;
+}
+
+.score span {
+  text-transform: capitalize;
+  font-weight: 750;
+}
+
+.score-stable strong,
+.score-stable span {
+  color: #176b50;
+}
+
+.score-monitor strong,
+.score-monitor span {
+  color: #9a6500;
+}
+
+.score-attention strong,
+.score-attention span {
+  color: #a33b2f;
+}
+
+.score-components {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.score-components li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid #d7e5df;
+  padding-top: 10px;
+}
+
+.muted {
+  color: #4b6a61;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .history-link,
 .back-link {
   display: inline-block;

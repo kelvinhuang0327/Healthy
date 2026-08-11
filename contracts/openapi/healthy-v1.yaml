@@ -929,6 +929,151 @@
         "title": "HealthReportSummary",
         "type": "object"
       },
+      "HealthScoreComponentSummary": {
+        "properties": {
+          "evidence_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "cardiovascular",
+              "metabolic",
+              "activity",
+              "weight",
+              "overall"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "penalty": {
+            "title": "Penalty",
+            "type": "integer"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "label",
+          "points",
+          "penalty",
+          "evidence_ids",
+          "rationale"
+        ],
+        "title": "HealthScoreComponentSummary",
+        "type": "object"
+      },
+      "HealthScoreCoverageSummary": {
+        "properties": {
+          "evaluated_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evaluated Inputs",
+            "type": "array"
+          },
+          "missing_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Inputs",
+            "type": "array"
+          },
+          "unsupported_sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unsupported Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "evaluated_inputs",
+          "missing_inputs",
+          "unsupported_sources"
+        ],
+        "title": "HealthScoreCoverageSummary",
+        "type": "object"
+      },
+      "HealthScoreSummary": {
+        "properties": {
+          "anchor_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor At"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/HealthScoreComponentSummary"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/HealthScoreCoverageSummary"
+          },
+          "data_points": {
+            "title": "Data Points",
+            "type": "integer"
+          },
+          "limitations": {
+            "title": "Limitations",
+            "type": "string"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "stable",
+              "monitor",
+              "attention",
+              "insufficient_data"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "score",
+          "status",
+          "rule_version",
+          "anchor_at",
+          "data_points",
+          "components",
+          "coverage",
+          "limitations"
+        ],
+        "title": "HealthScoreSummary",
+        "type": "object"
+      },
       "HistorySourceSummary": {
         "properties": {
           "id": {
@@ -2205,6 +2350,51 @@
           }
         ],
         "summary": "Get Assistant Today"
+      }
+    },
+    "/v1/persons/{person_id}/health-score": {
+      "get": {
+        "operationId": "get_health_score_v1_persons__person_id__health_score_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthScoreSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Health Score"
       }
     },
     "/v1/persons/{person_id}/history": {

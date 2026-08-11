@@ -8,6 +8,7 @@ import {
   type HealthMetric,
   type HealthReportDetail,
   type HealthReportSummary,
+  type HealthScore,
   type Person,
   type SessionSummary,
   type SymptomLog,
@@ -20,6 +21,7 @@ export default function Home() {
     null,
   );
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
+  const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
   const [symptomLogs, setSymptomLogs] = useState<SymptomLog[]>([]);
   const [healthActions, setHealthActions] = useState<HealthAction[]>([]);
   const [healthReports, setHealthReports] = useState<HealthReportSummary[]>([]);
@@ -45,6 +47,7 @@ export default function Home() {
       setPersons([]);
       setSelectedPersonId(null);
       setMetrics([]);
+      setHealthScore(null);
       setSymptomLogs([]);
       setHealthActions([]);
       setHealthReports([]);
@@ -78,14 +81,16 @@ export default function Home() {
     let cancelled = false;
     Promise.all([
       api.healthMetrics(effectiveSelectedPersonId),
+      api.healthScore(effectiveSelectedPersonId),
       api.symptomLogs(effectiveSelectedPersonId),
       api.healthActions(effectiveSelectedPersonId),
       api.healthReports(effectiveSelectedPersonId),
       api.assistantToday(effectiveSelectedPersonId),
     ])
-      .then(([metricRows, symptomRows, actionRows, reportRows, today]) => {
+      .then(([metricRows, score, symptomRows, actionRows, reportRows, today]) => {
         if (!cancelled) {
           setMetrics(metricRows);
+          setHealthScore(score);
           setSymptomLogs(symptomRows);
           setHealthActions(actionRows);
           setHealthReports(reportRows);
@@ -95,6 +100,7 @@ export default function Home() {
       .catch(() => {
         if (!cancelled) {
           setMetrics([]);
+          setHealthScore(null);
           setSymptomLogs([]);
           setHealthActions([]);
           setHealthReports([]);
@@ -148,6 +154,20 @@ export default function Home() {
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Could not refresh Today",
+      );
+    }
+  }
+
+  async function refreshHealthScore() {
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      setHealthScore(await api.healthScore(personId));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not refresh health score",
       );
     }
   }
@@ -212,6 +232,7 @@ export default function Home() {
       setPersons([]);
       setSelectedPersonId(null);
       setMetrics([]);
+      setHealthScore(null);
       setSymptomLogs([]);
       setHealthActions([]);
       setAssistantToday(null);
@@ -258,6 +279,7 @@ export default function Home() {
       formElement.reset();
       const rows = await api.healthMetrics(personId);
       setMetrics(rows);
+      await refreshHealthScore();
       await refreshAssistantToday();
     } catch (reason) {
       setError(
@@ -290,6 +312,7 @@ export default function Home() {
       });
       formElement.reset();
       setSymptomLogs(await api.symptomLogs(personId));
+      await refreshHealthScore();
       await refreshAssistantToday();
     } catch (reason) {
       setError(
@@ -542,6 +565,71 @@ export default function Home() {
               </a>
             ) : null}
           </article>
+
+          {selectedPerson ? (
+            <article className="card" data-testid="health-score-card">
+              <div className="session">
+                <div>
+                  <span className="pill">Deterministic V1</span>
+                  <h2>Health signal for {selectedPerson.display_name}</h2>
+                </div>
+                <button
+                  className="secondary"
+                  type="button"
+                  data-testid="health-score-refresh-button"
+                  onClick={refreshHealthScore}
+                >
+                  Refresh
+                </button>
+              </div>
+              {healthScore ? (
+                <>
+                  <p className={`score score-${healthScore.status}`}>
+                    <strong data-testid="health-score-value">
+                      {healthScore.score ?? "—"}
+                    </strong>
+                    <span data-testid="health-score-status">
+                      {healthScore.status.replace("_", " ")}
+                    </span>
+                  </p>
+                  <p>
+                    Based on {healthScore.data_points} data point
+                    {healthScore.data_points === 1 ? "" : "s"} · rule{" "}
+                    {healthScore.rule_version}
+                  </p>
+                  {healthScore.components.length ? (
+                    <ul className="score-components">
+                      {healthScore.components.map((component) => (
+                        <li key={component.kind}>
+                          <span>
+                            <strong>{component.label}</strong>
+                            <br />
+                            {component.rationale}
+                          </span>
+                          <span>{component.points}/100</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <div className="muted" data-testid="health-score-coverage">
+                    <strong>Coverage</strong>
+                    <p>
+                      Evaluated: {healthScore.coverage.evaluated_inputs.join(", ") || "none"}
+                    </p>
+                    <p>
+                      Missing ordinary data: {healthScore.coverage.missing_inputs.join(", ") || "none"}
+                    </p>
+                    <p>
+                      Unavailable / not evaluated: {healthScore.coverage.unsupported_sources.join(", ")}
+                    </p>
+                  </div>
+                  <p className="muted">{healthScore.limitations}</p>
+                </>
+              ) : (
+                <p>Health signal unavailable.</p>
+              )}
+            </article>
+          ) : null}
 
           <article className="card">
             <h2>Add a Person</h2>

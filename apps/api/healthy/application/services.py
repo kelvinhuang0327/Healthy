@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from healthy.application import health_score_inputs
 from healthy.application.history import HistoryItem, build_history
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
@@ -664,6 +665,30 @@ def get_health_history(
             database_session,
             person.id,
         ),
+    )
+
+
+def get_health_score_inputs(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    now: datetime,
+    lookback_days: int = health_score_inputs.LEGACY_LAB_LOOKBACK_DAYS,
+) -> health_score_inputs.HealthScoreInputs | None:
+    """Read the current person's reusable score inputs without writing state."""
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    observations = HealthReportRepository.list_confirmed_observations_for_person(
+        database_session,
+        person.id,
+    )
+    return health_score_inputs.build_health_score_inputs(
+        observations,
+        person_id=person.id,
+        now=now,
+        lookback_days=lookback_days,
     )
 
 

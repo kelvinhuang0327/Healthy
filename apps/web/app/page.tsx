@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   api,
+  type ActionRecommendation,
+  type ActionRecommendations,
   type AssistantToday,
   type HealthAction,
   type HealthMetric,
@@ -54,6 +56,8 @@ export default function Home() {
   const [selectedReportDetail, setSelectedReportDetail] =
     useState<HealthReportDetail | null>(null);
   const [riskAlerts, setRiskAlerts] = useState<RiskAlerts | null>(null);
+  const [actionRecommendations, setActionRecommendations] =
+    useState<ActionRecommendations | null>(null);
   const [assistantToday, setAssistantToday] = useState<AssistantToday | null>(
     null,
   );
@@ -80,6 +84,7 @@ export default function Home() {
       setHealthReports([]);
       setSelectedReportDetail(null);
       setRiskAlerts(null);
+      setActionRecommendations(null);
       setAssistantToday(null);
     }
   }
@@ -115,9 +120,19 @@ export default function Home() {
       api.healthReports(effectiveSelectedPersonId),
       api.assistantToday(effectiveSelectedPersonId),
       api.riskAlerts(effectiveSelectedPersonId),
+      api.actionRecommendations(effectiveSelectedPersonId),
     ])
       .then(
-        ([metricRows, score, symptomRows, actionRows, reportRows, today, alerts]) => {
+        ([
+          metricRows,
+          score,
+          symptomRows,
+          actionRows,
+          reportRows,
+          today,
+          alerts,
+          recommendations,
+        ]) => {
           if (!cancelled) {
             setMetrics(metricRows);
             setHealthScore(score);
@@ -126,6 +141,7 @@ export default function Home() {
             setHealthReports(reportRows);
             setAssistantToday(today);
             setRiskAlerts(alerts);
+            setActionRecommendations(recommendations);
           }
         },
       )
@@ -139,6 +155,7 @@ export default function Home() {
           setSelectedReportDetail(null);
           setAssistantToday(null);
           setRiskAlerts(null);
+          setActionRecommendations(null);
         }
       });
     return () => {
@@ -169,7 +186,7 @@ export default function Home() {
       setPersons((current) =>
         current.map((person) => (person.id === updated.id ? updated : person)),
       );
-      await refreshRiskAlerts();
+      await refreshRiskSignals();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Height update failed");
     } finally {
@@ -192,18 +209,29 @@ export default function Home() {
     }
   }
 
-  async function refreshRiskAlerts() {
+  async function refreshRiskSignals() {
     const personId = selectedPerson?.id;
     if (!personId) {
       return;
     }
     try {
-      setRiskAlerts(await api.riskAlerts(personId));
+      const [alerts, recommendations] = await Promise.all([
+        api.riskAlerts(personId),
+        api.actionRecommendations(personId),
+      ]);
+      setRiskAlerts(alerts);
+      setActionRecommendations(recommendations);
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : "Could not refresh Risk Alerts",
+        reason instanceof Error
+          ? reason.message
+          : "Could not refresh Risk Alerts",
       );
     }
+  }
+
+  async function refreshToday() {
+    await Promise.all([refreshAssistantToday(), refreshRiskSignals()]);
   }
 
   async function refreshHealthScore() {
@@ -286,6 +314,7 @@ export default function Home() {
       setHealthReports([]);
       setSelectedReportDetail(null);
       setRiskAlerts(null);
+      setActionRecommendations(null);
       setAssistantToday(null);
       setError("");
     } catch (reason) {
@@ -332,7 +361,7 @@ export default function Home() {
       setMetrics(rows);
       await refreshHealthScore();
       await refreshAssistantToday();
-      await refreshRiskAlerts();
+      await refreshRiskSignals();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Metric entry failed",
@@ -482,7 +511,7 @@ export default function Home() {
       setSelectedReportDetail(confirmed);
       setHealthReports(await api.healthReports(personId));
       await refreshAssistantToday();
-      await refreshRiskAlerts();
+      await refreshRiskSignals();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Report confirmation failed",
@@ -508,6 +537,8 @@ export default function Home() {
   const displayedRiskAlerts = riskAlerts
     ? [...riskAlerts.alerts].sort(compareRiskAlerts)
     : [];
+  const displayedActionRecommendations: ActionRecommendation[] =
+    actionRecommendations?.recommendations ?? [];
 
   return (
 
@@ -596,6 +627,7 @@ export default function Home() {
                     setSelectedPersonId(person.id);
                     if (person.id !== effectiveSelectedPersonId) {
                       setRiskAlerts(null);
+                      setActionRecommendations(null);
                     }
                   }}
                   role="button"
@@ -1161,7 +1193,7 @@ export default function Home() {
                   className="secondary"
                   type="button"
                   data-testid="today-refresh-button"
-                  onClick={refreshAssistantToday}
+                  onClick={refreshToday}
                 >
                   Refresh
                 </button>
@@ -1240,6 +1272,60 @@ export default function Home() {
                     </>
                   ) : (
                     <p>Loading risk alerts&hellip;</p>
+                  )}
+
+                  <h3>Recommended next steps</h3>
+                  <p data-testid="today-action-recommendations-disclaimer">
+                    These are deterministic follow-up suggestions based on Risk
+                    Alerts, not a diagnosis, treatment plan, or clinical
+                    urgency assessment.
+                  </p>
+                  {actionRecommendations ? (
+                    displayedActionRecommendations.length === 0 ? (
+                      <p data-testid="today-action-recommendations-empty">
+                        No action recommendations are available from the
+                        deterministic risk signals currently supported by
+                        Healthy.
+                      </p>
+                    ) : (
+                      <ul data-testid="today-action-recommendation-list">
+                        {displayedActionRecommendations.map((recommendation) => (
+                          <li
+                            key={`${recommendation.recommendation_code}-${recommendation.evidence.source_id}`}
+                            data-testid="today-action-recommendation-card"
+                          >
+                            <strong>{recommendation.title}</strong>
+                            <p>{recommendation.suggested_action}</p>
+                            <p>Why it was suggested: {recommendation.rationale}</p>
+                            <span>
+                              Source Risk Alert: {recommendation.source_rule_code} ·
+                              {" "}internal severity: {recommendation.source_severity}
+                            </span>
+                            <span>
+                              Matching alerts for this rule: {recommendation.matching_alert_count}
+                            </span>
+                            <span>
+                              Evidence: {recommendation.evidence.source_kind} ·{" "}
+                              {recommendation.evidence.source_id}
+                            </span>
+                            {recommendation.evidence.report_source_name ? (
+                              <span>
+                                Report source: {recommendation.evidence.report_source_name}
+                              </span>
+                            ) : null}
+                            <time dateTime={recommendation.evidence.observed_at}>
+                              Observed: {new Date(
+                                recommendation.evidence.observed_at,
+                              ).toLocaleString()}
+                            </time>
+                            <p>{recommendation.limitations}</p>
+                            <span>Rule version: {recommendation.rule_version}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                  ) : (
+                    <p>Loading action recommendations&hellip;</p>
                   )}
 
                   <h3>Evidence-linked insights</h3>

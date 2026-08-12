@@ -24,6 +24,8 @@ from healthy.presentation.dependencies import (
 from healthy.presentation.schemas import (
     AccountCreate,
     AccountSummary,
+    ActionRecommendationsSummary,
+    ActionRecommendationSummary,
     AssistantTodaySummary,
     DailyAttentionItemSummary,
     HealthActionCreate,
@@ -422,6 +424,53 @@ def get_risk_alerts(
                 ),
             )
             for alert in result.alerts
+        ],
+    )
+
+
+@router.get(
+    "/persons/{person_id}/action-recommendations",
+    response_model=ActionRecommendationsSummary,
+)
+def get_action_recommendations(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> ActionRecommendationsSummary:
+    result = services.get_action_recommendations(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return ActionRecommendationsSummary(
+        recommendations=[
+            ActionRecommendationSummary(
+                recommendation_code=recommendation.recommendation_code,
+                source_rule_code=recommendation.source_rule_code,
+                source_risk_type=recommendation.source_risk_type,
+                source_severity=recommendation.source_severity,
+                title=recommendation.title,
+                rationale=recommendation.rationale,
+                suggested_action=recommendation.suggested_action,
+                matching_alert_count=recommendation.matching_alert_count,
+                rule_version=recommendation.rule_version,
+                limitations=recommendation.limitations,
+                evidence=RiskAlertEvidenceSummary(
+                    source_kind=recommendation.evidence.source_kind,
+                    source_id=recommendation.evidence.source_id,
+                    person_id=recommendation.evidence.person_id,
+                    observed_at=recommendation.evidence.observed_at,
+                    observation_id=recommendation.evidence.observation_id,
+                    report_id=recommendation.evidence.report_id,
+                    report_source_name=recommendation.evidence.report_source_name,
+                ),
+            )
+            for recommendation in result.recommendations
         ],
     )
 

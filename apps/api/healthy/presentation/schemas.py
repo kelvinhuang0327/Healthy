@@ -266,6 +266,24 @@ class RiskAlertsSummary(BaseModel):
     alerts: list[RiskAlertSummary]
 
 
+class ActionRecommendationSummary(BaseModel):
+    recommendation_code: str
+    source_rule_code: str
+    source_risk_type: str
+    source_severity: Literal["medium", "high"]
+    title: str
+    rationale: str
+    suggested_action: str
+    matching_alert_count: int
+    rule_version: str
+    limitations: str
+    evidence: RiskAlertEvidenceSummary
+
+
+class ActionRecommendationsSummary(BaseModel):
+    recommendations: list[ActionRecommendationSummary]
+
+
 class SymptomLogCreate(BaseModel):
     symptom: str = Field(min_length=1, max_length=symptoms_domain.SYMPTOM_MAX_LENGTH)
     occurred_at: datetime

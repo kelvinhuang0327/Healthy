@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session, joinedload
 
 from healthy.domain.actions import HealthActionOriginType, HealthActionStatus
 from healthy.infrastructure.models import (
     HealthAction,
     HealthActionOutcome,
+    HealthActionReminder,
     HealthMetric,
     HealthReportModel,
     HealthReportObservationModel,
@@ -391,6 +393,112 @@ class HealthActionRepository:
             .where(HealthAction.person_id == person_id)
         )
         return database_session.scalar(statement) or 0
+
+
+class HealthActionReminderRepository:
+    @staticmethod
+    def get_for_action(
+        database_session: Session,
+        action_id: uuid.UUID,
+    ) -> HealthActionReminder | None:
+        statement = select(HealthActionReminder).where(
+            HealthActionReminder.action_id == action_id,
+        )
+        with database_session.no_autoflush:
+            return database_session.scalar(statement)
+
+    @staticmethod
+    def upsert_for_action(
+        database_session: Session,
+        action_id: uuid.UUID,
+        *,
+        timezone_name: str,
+        local_time: time,
+        updated_at: datetime,
+    ) -> HealthActionReminder:
+        statement = (
+            postgresql_insert(HealthActionReminder)
+            .values(
+                action_id=action_id,
+                timezone_name=timezone_name,
+                local_time=local_time,
+            )
+            .on_conflict_do_update(
+                index_elements=[HealthActionReminder.action_id],
+                set_={
+                    "timezone_name": timezone_name,
+                    "local_time": local_time,
+                    "updated_at": updated_at,
+                },
+            )
+            .returning(HealthActionReminder)
+            .execution_options(populate_existing=True)
+        )
+        return database_session.scalars(statement).one()
+
+    @staticmethod
+    def delete_for_action(database_session: Session, action_id: uuid.UUID) -> bool:
+        statement = (
+            delete(HealthActionReminder)
+            .where(HealthActionReminder.action_id == action_id)
+            .returning(HealthActionReminder.id)
+        )
+        return database_session.scalar(statement) is not None
+
+    @staticmethod
+    def list_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+    ) -> list[tuple[HealthActionReminder, HealthAction]]:
+        statement = (
+            select(HealthActionReminder, HealthAction)
+            .join(HealthAction, HealthAction.id == HealthActionReminder.action_id)
+            .where(HealthAction.person_id == person_id)
+            .order_by(HealthAction.created_at.desc(), HealthAction.id.desc())
+        )
+        with database_session.no_autoflush:
+            rows = database_session.execute(statement).all()
+        return [(row[0], row[1]) for row in rows]
+
+    @staticmethod
+    def acknowledge_for_action(
+        database_session: Session,
+        action_id: uuid.UUID,
+        *,
+        local_date: date,
+        updated_at: datetime,
+    ) -> HealthActionReminder | None:
+        statement = (
+            update(HealthActionReminder)
+            .where(HealthActionReminder.action_id == action_id)
+            .values(
+                last_acknowledged_local_date=local_date,
+                updated_at=updated_at,
+            )
+            .returning(HealthActionReminder)
+            .execution_options(synchronize_session=False, populate_existing=True)
+        )
+        return database_session.scalars(statement).one_or_none()
+
+    @staticmethod
+    def set_snoozed_until(
+        database_session: Session,
+        action_id: uuid.UUID,
+        *,
+        snoozed_until: datetime,
+        updated_at: datetime,
+    ) -> HealthActionReminder | None:
+        statement = (
+            update(HealthActionReminder)
+            .where(HealthActionReminder.action_id == action_id)
+            .values(
+                snoozed_until=snoozed_until,
+                updated_at=updated_at,
+            )
+            .returning(HealthActionReminder)
+            .execution_options(synchronize_session=False, populate_existing=True)
+        )
+        return database_session.scalars(statement).one_or_none()
 
 
 class HealthActionOutcomeRepository:

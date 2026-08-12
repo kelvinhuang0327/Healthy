@@ -159,6 +159,29 @@ export type HealthAction = {
   updated_at: string;
 };
 
+export type HealthActionReminder = {
+  id: string;
+  action_id: string;
+  timezone_name: string;
+  local_time: string;
+  snoozed_until: string | null;
+  last_acknowledged_local_date: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DueHealthActionReminder = {
+  reminder_id: string;
+  action_id: string;
+  action_title: string;
+  action_origin_type: "manual" | "action_recommendation";
+  timezone_name: string;
+  local_time: string;
+  local_date: string;
+  snoozed_until: string | null;
+  last_acknowledged_local_date: string | null;
+};
+
 export type ActionRecommendationAcceptance = {
   action: HealthAction;
   created: boolean;
@@ -235,6 +258,16 @@ function csrfToken(): string {
   return row ? decodeURIComponent(row.slice("healthy_csrf=".length)) : "";
 }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function request<T>(
   path: string,
   init: RequestInit = {},
@@ -260,7 +293,7 @@ async function request<T>(
     const body = (await response.json().catch(() => null)) as {
       detail?: string;
     } | null;
-    throw new Error(body?.detail ?? `Request failed (${response.status})`);
+    throw new ApiError(body?.detail ?? `Request failed (${response.status})`, response.status);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -425,6 +458,40 @@ export const api = {
       `/persons/${personId}/actions/${actionId}/complete`,
       { method: "POST" },
     ),
+  healthActionReminder: (personId: string, actionId: string) =>
+    request<HealthActionReminder>(
+      `/persons/${personId}/actions/${actionId}/reminder`,
+    ),
+  upsertHealthActionReminder: (
+    personId: string,
+    actionId: string,
+    payload: { timezone_name: string; local_time: string },
+  ) =>
+    request<HealthActionReminder>(
+      `/persons/${personId}/actions/${actionId}/reminder`,
+      { method: "PUT", body: JSON.stringify(payload) },
+    ),
+  deleteHealthActionReminder: (personId: string, actionId: string) =>
+    request<void>(
+      `/persons/${personId}/actions/${actionId}/reminder`,
+      { method: "DELETE" },
+    ),
+  acknowledgeHealthActionReminder: (personId: string, actionId: string) =>
+    request<HealthActionReminder>(
+      `/persons/${personId}/actions/${actionId}/reminder/acknowledge`,
+      { method: "POST" },
+    ),
+  snoozeHealthActionReminder: (
+    personId: string,
+    actionId: string,
+    until: string,
+  ) =>
+    request<HealthActionReminder>(
+      `/persons/${personId}/actions/${actionId}/reminder/snooze`,
+      { method: "POST", body: JSON.stringify({ until }) },
+    ),
+  dueHealthActionReminders: (personId: string) =>
+    request<DueHealthActionReminder[]>(`/persons/${personId}/reminders/due`),
   createHealthActionOutcome: (
     personId: string,
     actionId: string,

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from healthy.application import health_score_inputs, risk_alert_inputs
 from healthy.application.analytics import HealthAnalytics, build_health_analytics
 from healthy.application.history import HistoryItem, build_history
+from healthy.domain import action_recommendations as action_recommendations_domain
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
 from healthy.domain import health_score as health_score_domain
@@ -815,6 +816,25 @@ def get_risk_alerts(
         observations,
         person_id=person.id,
         height_cm=person.height_cm,
+    )
+
+
+def get_action_recommendations(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+) -> action_recommendations_domain.ActionRecommendations | None:
+    """Build the current person's deterministic action recommendations."""
+    risk_alerts = get_risk_alerts(
+        database_session,
+        owner_account_id=owner_account_id,
+        person_id=person_id,
+    )
+    if risk_alerts is None:
+        return None
+    return action_recommendations_domain.build_action_recommendations(
+        risk_alerts.alerts,
     )
 
 

@@ -60,6 +60,88 @@
         "title": "AccountSummary",
         "type": "object"
       },
+      "ActionRecommendationSummary": {
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/RiskAlertEvidenceSummary"
+          },
+          "limitations": {
+            "title": "Limitations",
+            "type": "string"
+          },
+          "matching_alert_count": {
+            "title": "Matching Alert Count",
+            "type": "integer"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          },
+          "recommendation_code": {
+            "title": "Recommendation Code",
+            "type": "string"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "source_risk_type": {
+            "title": "Source Risk Type",
+            "type": "string"
+          },
+          "source_rule_code": {
+            "title": "Source Rule Code",
+            "type": "string"
+          },
+          "source_severity": {
+            "enum": [
+              "medium",
+              "high"
+            ],
+            "title": "Source Severity",
+            "type": "string"
+          },
+          "suggested_action": {
+            "title": "Suggested Action",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recommendation_code",
+          "source_rule_code",
+          "source_risk_type",
+          "source_severity",
+          "title",
+          "rationale",
+          "suggested_action",
+          "matching_alert_count",
+          "rule_version",
+          "limitations",
+          "evidence"
+        ],
+        "title": "ActionRecommendationSummary",
+        "type": "object"
+      },
+      "ActionRecommendationsSummary": {
+        "properties": {
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRecommendationSummary"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recommendations"
+        ],
+        "title": "ActionRecommendationsSummary",
+        "type": "object"
+      },
       "AssistantTodaySummary": {
         "properties": {
           "daily_attention": {
@@ -2049,6 +2131,51 @@
           }
         ],
         "summary": "Get Person"
+      }
+    },
+    "/v1/persons/{person_id}/action-recommendations": {
+      "get": {
+        "operationId": "get_action_recommendations_v1_persons__person_id__action_recommendations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionRecommendationsSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Action Recommendations"
       }
     },
     "/v1/persons/{person_id}/actions": {

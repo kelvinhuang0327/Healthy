@@ -107,6 +107,24 @@ export type RiskAlerts = {
   alerts: RiskAlert[];
 };
 
+export type ActionRecommendation = {
+  recommendation_code: string;
+  source_rule_code: string;
+  source_risk_type: string;
+  source_severity: "medium" | "high";
+  title: string;
+  rationale: string;
+  suggested_action: string;
+  matching_alert_count: number;
+  rule_version: string;
+  limitations: string;
+  evidence: RiskAlert["evidence"];
+};
+
+export type ActionRecommendations = {
+  recommendations: ActionRecommendation[];
+};
+
 export type SymptomLog = {
   id: string;
   person_id: string;
@@ -313,6 +331,8 @@ export const api = {
     request<HealthScore>(`/persons/${personId}/health-score`),
   riskAlerts: (personId: string) =>
     request<RiskAlerts>(`/persons/${personId}/risk-alerts`),
+  actionRecommendations: (personId: string) =>
+    request<ActionRecommendations>(`/persons/${personId}/action-recommendations`),
   createHealthMetric: (
     personId: string,
     payload: {

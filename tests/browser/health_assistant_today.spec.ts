@@ -53,6 +53,7 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
     "Active alerts: 0",
   );
   await expect(todaySection.getByTestId("today-risk-alerts-empty")).toBeVisible();
+  await expect(todaySection.getByTestId("today-action-recommendations-empty")).toBeVisible();
   await expect(todaySection.getByTestId("today-risk-alerts-disclaimer")).toContainText(
     "not a diagnosis",
   );
@@ -90,6 +91,16 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await expect(riskAlerts.first()).toContainText("BMI_OBESE");
   await expect(riskAlerts.first()).toContainText("Severity: high");
   await expect(riskAlerts.first()).toContainText("Evidence: health_metric");
+  const actionRecommendations = todaySection.getByTestId(
+    "today-action-recommendation-card",
+  );
+  await expect(actionRecommendations).toHaveCount(1);
+  await expect(actionRecommendations.first()).toContainText("BMI signal");
+  await expect(actionRecommendations.first()).toContainText(
+    "Review the source record",
+  );
+  await expect(actionRecommendations.first()).toContainText("Evidence: health_metric");
+  await expect(actionRecommendations.first()).toContainText("not a diagnosis");
 
   await metricForm.locator('input[name="systolic_bp_mm_hg"]').fill("145");
   await metricForm.locator('input[name="diastolic_bp_mm_hg"]').fill("95");
@@ -99,6 +110,10 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await expect(riskAlerts).toHaveCount(2);
   await expect(riskAlerts.filter({ hasText: "BP_HIGH" })).toContainText(
     "Evidence: health_metric",
+  );
+  await expect(actionRecommendations).toHaveCount(2);
+  await expect(actionRecommendations.filter({ hasText: "Blood pressure signal" })).toContainText(
+    "Source Risk Alert: BP_HIGH",
   );
 
   const actionForm = page.getByTestId("action-form");

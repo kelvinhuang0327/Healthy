@@ -1467,6 +1467,137 @@
         "title": "RegistrationResponse",
         "type": "object"
       },
+      "RiskAlertEvidenceSummary": {
+        "properties": {
+          "observation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Id"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "person_id": {
+            "format": "uuid",
+            "title": "Person Id",
+            "type": "string"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "report_source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Source Name"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "health_metric",
+              "lab_report"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_kind",
+          "source_id",
+          "person_id",
+          "observed_at",
+          "observation_id",
+          "report_id",
+          "report_source_name"
+        ],
+        "title": "RiskAlertEvidenceSummary",
+        "type": "object"
+      },
+      "RiskAlertSummary": {
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/RiskAlertEvidenceSummary"
+          },
+          "risk_type": {
+            "title": "Risk Type",
+            "type": "string"
+          },
+          "rule_code": {
+            "title": "Rule Code",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "medium",
+              "high"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "const": "active",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule_code",
+          "risk_type",
+          "severity",
+          "status",
+          "evidence"
+        ],
+        "title": "RiskAlertSummary",
+        "type": "object"
+      },
+      "RiskAlertsSummary": {
+        "properties": {
+          "active_count": {
+            "title": "Active Count",
+            "type": "integer"
+          },
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/RiskAlertSummary"
+            },
+            "title": "Alerts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "active_count",
+          "alerts"
+        ],
+        "title": "RiskAlertsSummary",
+        "type": "object"
+      },
       "SessionCreate": {
         "properties": {
           "email": {
@@ -3163,6 +3294,51 @@
           }
         ],
         "summary": "Confirm Health Report"
+      }
+    },
+    "/v1/persons/{person_id}/risk-alerts": {
+      "get": {
+        "operationId": "get_risk_alerts_v1_persons__person_id__risk_alerts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAlertsSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Risk Alerts"
       }
     },
     "/v1/persons/{person_id}/symptoms": {

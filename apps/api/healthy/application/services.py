@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from healthy.application import health_score_inputs
+from healthy.application import health_score_inputs, risk_alert_inputs
 from healthy.application.analytics import HealthAnalytics, build_health_analytics
 from healthy.application.history import HistoryItem, build_history
 from healthy.domain import actions as actions_domain
@@ -791,6 +791,29 @@ def get_health_score_inputs(
         lookback_days=lookback_days,
         metrics=metrics,
         symptoms=symptoms,
+        height_cm=person.height_cm,
+    )
+
+
+def get_risk_alerts(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+) -> risk_alert_inputs.RiskAlertsInput | None:
+    """Build the current person's deterministic risk-alert read model."""
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    metrics = HealthMetricRepository.list_for_person(database_session, person.id)
+    observations = HealthReportRepository.list_confirmed_observations_for_person(
+        database_session,
+        person.id,
+    )
+    return risk_alert_inputs.build_risk_alerts_input(
+        metrics,
+        observations,
+        person_id=person.id,
         height_cm=person.height_cm,
     )
 

@@ -49,6 +49,13 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
     "data-attention-kind",
     "insufficient_data",
   );
+  await expect(todaySection.getByTestId("today-risk-alert-count")).toHaveText(
+    "Active alerts: 0",
+  );
+  await expect(todaySection.getByTestId("today-risk-alerts-empty")).toBeVisible();
+  await expect(todaySection.getByTestId("today-risk-alerts-disclaimer")).toContainText(
+    "not a diagnosis",
+  );
 
   const symptomForm = page.getByTestId("symptom-form");
   await symptomForm.getByLabel("Symptom").fill("Backdated headache");
@@ -68,13 +75,31 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await expect(page.getByTestId("symptom-list").getByTestId("symptom-card")).toHaveCount(2);
 
   const metricForm = page.getByTestId("metric-form");
+  await metricForm.locator('input[name="weight_kg"]').fill("90");
   await metricForm.locator('input[name="heart_rate_bpm"]').fill("70");
   await metricForm.getByRole("button", { name: "Save metric" }).click();
   await expect(page.getByTestId("metric-list").getByTestId("metric-card")).toHaveCount(1);
+  await expect(todaySection.getByTestId("today-risk-alerts-empty")).toBeVisible();
 
+  const heightProfile = page.getByTestId("height-profile");
+  await heightProfile.getByLabel("Height (cm)").fill("170");
+  await heightProfile.getByRole("button", { name: "Save height" }).click();
+  await expect(page.getByTestId("height-value")).toHaveText("Current height: 170 cm");
+  const riskAlerts = todaySection.getByTestId("today-risk-alert-card");
+  await expect(riskAlerts).toHaveCount(1);
+  await expect(riskAlerts.first()).toContainText("BMI_OBESE");
+  await expect(riskAlerts.first()).toContainText("Severity: high");
+  await expect(riskAlerts.first()).toContainText("Evidence: health_metric");
+
+  await metricForm.locator('input[name="systolic_bp_mm_hg"]').fill("145");
+  await metricForm.locator('input[name="diastolic_bp_mm_hg"]').fill("95");
   await metricForm.locator('input[name="heart_rate_bpm"]').fill("72");
   await metricForm.getByRole("button", { name: "Save metric" }).click();
   await expect(page.getByTestId("metric-list").getByTestId("metric-card")).toHaveCount(2);
+  await expect(riskAlerts).toHaveCount(2);
+  await expect(riskAlerts.filter({ hasText: "BP_HIGH" })).toContainText(
+    "Evidence: health_metric",
+  );
 
   const actionForm = page.getByTestId("action-form");
   await actionForm.getByLabel("Title").fill("Evening walk");

@@ -144,10 +144,24 @@ export type HealthAction = {
   title: string;
   description: string | null;
   due_at: string | null;
+  origin_type: "manual" | "action_recommendation";
+  recommendation_code: string | null;
+  recommendation_rule_version: string | null;
+  source_rule_code: string | null;
+  source_evidence_kind: "health_metric" | "lab_report" | null;
+  source_evidence_id: string | null;
+  source_observation_id: string | null;
+  source_report_id: string | null;
+  source_evidence_observed_at: string | null;
   status: "todo" | "done";
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ActionRecommendationAcceptance = {
+  action: HealthAction;
+  created: boolean;
 };
 
 export type HealthActionOutcome = {
@@ -333,6 +347,25 @@ export const api = {
     request<RiskAlerts>(`/persons/${personId}/risk-alerts`),
   actionRecommendations: (personId: string) =>
     request<ActionRecommendations>(`/persons/${personId}/action-recommendations`),
+  acceptActionRecommendation: (
+    personId: string,
+    recommendationCode: string,
+    payload: {
+      rule_version: string;
+      source_kind: "health_metric" | "lab_report";
+      source_id: string;
+      observation_id: string | null;
+      report_id: string | null;
+      observed_at: string;
+    },
+  ) =>
+    request<ActionRecommendationAcceptance>(
+      `/persons/${personId}/action-recommendations/${recommendationCode}/accept`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    ),
   createHealthMetric: (
     personId: string,
     payload: {

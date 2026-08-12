@@ -11,6 +11,11 @@ class HealthActionStatus(StrEnum):
     DONE = "done"
 
 
+class HealthActionOriginType(StrEnum):
+    MANUAL = "manual"
+    ACTION_RECOMMENDATION = "action_recommendation"
+
+
 def normalize_title(value: str) -> str:
     """Return a trimmed, nonblank HealthAction title."""
     normalized = value.strip()

@@ -42,6 +42,39 @@ function compareRiskAlerts(left: RiskAlert, right: RiskAlert): number {
   return 0;
 }
 
+function recommendationIdentityKey(recommendation: ActionRecommendation): string {
+  return JSON.stringify([
+    recommendation.evidence.person_id,
+    recommendation.recommendation_code,
+    recommendation.rule_version,
+    recommendation.evidence.source_kind,
+    recommendation.evidence.source_id,
+    recommendation.evidence.observation_id,
+    recommendation.evidence.report_id,
+  ]);
+}
+
+function acceptedActionIdentityKey(action: HealthAction): string | null {
+  if (
+    action.origin_type !== "action_recommendation" ||
+    action.recommendation_code === null ||
+    action.recommendation_rule_version === null ||
+    action.source_evidence_kind === null ||
+    action.source_evidence_id === null
+  ) {
+    return null;
+  }
+  return JSON.stringify([
+    action.person_id,
+    action.recommendation_code,
+    action.recommendation_rule_version,
+    action.source_evidence_kind,
+    action.source_evidence_id,
+    action.source_observation_id,
+    action.source_report_id,
+  ]);
+}
+
 export default function Home() {
   const [session, setSession] = useState<SessionSummary | null>(null);
   const [persons, setPersons] = useState<Person[]>([]);
@@ -58,6 +91,8 @@ export default function Home() {
   const [riskAlerts, setRiskAlerts] = useState<RiskAlerts | null>(null);
   const [actionRecommendations, setActionRecommendations] =
     useState<ActionRecommendations | null>(null);
+  const [acceptingRecommendationKeys, setAcceptingRecommendationKeys] =
+    useState<string[]>([]);
   const [assistantToday, setAssistantToday] = useState<AssistantToday | null>(
     null,
   );
@@ -86,6 +121,7 @@ export default function Home() {
       setRiskAlerts(null);
       setActionRecommendations(null);
       setAssistantToday(null);
+      setAcceptingRecommendationKeys([]);
     }
   }
 
@@ -142,6 +178,7 @@ export default function Home() {
             setAssistantToday(today);
             setRiskAlerts(alerts);
             setActionRecommendations(recommendations);
+            setAcceptingRecommendationKeys([]);
           }
         },
       )
@@ -156,6 +193,7 @@ export default function Home() {
           setAssistantToday(null);
           setRiskAlerts(null);
           setActionRecommendations(null);
+          setAcceptingRecommendationKeys([]);
         }
       });
     return () => {
@@ -316,6 +354,7 @@ export default function Home() {
       setRiskAlerts(null);
       setActionRecommendations(null);
       setAssistantToday(null);
+      setAcceptingRecommendationKeys([]);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Logout failed");
@@ -446,6 +485,46 @@ export default function Home() {
     }
   }
 
+  async function acceptActionRecommendation(recommendation: ActionRecommendation) {
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const identityKey = recommendationIdentityKey(recommendation);
+    const accepted = healthActions.some(
+      (action) => acceptedActionIdentityKey(action) === identityKey,
+    );
+    if (accepted || acceptingRecommendationKeys.includes(identityKey)) {
+      return;
+    }
+    setAcceptingRecommendationKeys((current) => [...current, identityKey]);
+    try {
+      await api.acceptActionRecommendation(personId, recommendation.recommendation_code, {
+        rule_version: recommendation.rule_version,
+        source_kind: recommendation.evidence.source_kind,
+        source_id: recommendation.evidence.source_id,
+        observation_id: recommendation.evidence.observation_id,
+        report_id: recommendation.evidence.report_id,
+        observed_at: recommendation.evidence.observed_at,
+      });
+      const [actions, today] = await Promise.all([
+        api.healthActions(personId),
+        api.assistantToday(personId),
+      ]);
+      setHealthActions(actions);
+      setAssistantToday(today);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not add recommendation to actions",
+      );
+    } finally {
+      setAcceptingRecommendationKeys((current) =>
+        current.filter((key) => key !== identityKey),
+      );
+    }
+  }
+
   async function createHealthActionOutcome(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -539,6 +618,11 @@ export default function Home() {
     : [];
   const displayedActionRecommendations: ActionRecommendation[] =
     actionRecommendations?.recommendations ?? [];
+  const acceptedRecommendationKeys = new Set(
+    healthActions
+      .map(acceptedActionIdentityKey)
+      .filter((key): key is string => key !== null),
+  );
 
   return (
 
@@ -1289,39 +1373,56 @@ export default function Home() {
                       </p>
                     ) : (
                       <ul data-testid="today-action-recommendation-list">
-                        {displayedActionRecommendations.map((recommendation) => (
-                          <li
-                            key={`${recommendation.recommendation_code}-${recommendation.evidence.source_id}`}
-                            data-testid="today-action-recommendation-card"
-                          >
-                            <strong>{recommendation.title}</strong>
-                            <p>{recommendation.suggested_action}</p>
-                            <p>Why it was suggested: {recommendation.rationale}</p>
-                            <span>
-                              Source Risk Alert: {recommendation.source_rule_code} ·
-                              {" "}internal severity: {recommendation.source_severity}
-                            </span>
-                            <span>
-                              Matching alerts for this rule: {recommendation.matching_alert_count}
-                            </span>
-                            <span>
-                              Evidence: {recommendation.evidence.source_kind} ·{" "}
-                              {recommendation.evidence.source_id}
-                            </span>
-                            {recommendation.evidence.report_source_name ? (
+                        {displayedActionRecommendations.map((recommendation) => {
+                          const identityKey = recommendationIdentityKey(recommendation);
+                          const isAccepted = acceptedRecommendationKeys.has(identityKey);
+                          const isAccepting = acceptingRecommendationKeys.includes(identityKey);
+                          return (
+                            <li
+                              key={`${recommendation.recommendation_code}-${recommendation.evidence.source_id}`}
+                              data-testid="today-action-recommendation-card"
+                            >
+                              <strong>{recommendation.title}</strong>
+                              <p>{recommendation.suggested_action}</p>
+                              <p>Why it was suggested: {recommendation.rationale}</p>
                               <span>
-                                Report source: {recommendation.evidence.report_source_name}
+                                Source Risk Alert: {recommendation.source_rule_code} ·
+                                {" "}internal severity: {recommendation.source_severity}
                               </span>
-                            ) : null}
-                            <time dateTime={recommendation.evidence.observed_at}>
-                              Observed: {new Date(
-                                recommendation.evidence.observed_at,
-                              ).toLocaleString()}
-                            </time>
-                            <p>{recommendation.limitations}</p>
-                            <span>Rule version: {recommendation.rule_version}</span>
-                          </li>
-                        ))}
+                              <span>
+                                Matching alerts for this rule: {recommendation.matching_alert_count}
+                              </span>
+                              <span>
+                                Evidence: {recommendation.evidence.source_kind} ·{" "}
+                                {recommendation.evidence.source_id}
+                              </span>
+                              {recommendation.evidence.report_source_name ? (
+                                <span>
+                                  Report source: {recommendation.evidence.report_source_name}
+                                </span>
+                              ) : null}
+                              <time dateTime={recommendation.evidence.observed_at}>
+                                Observed: {new Date(
+                                  recommendation.evidence.observed_at,
+                                ).toLocaleString()}
+                              </time>
+                              <p>{recommendation.limitations}</p>
+                              <span>Rule version: {recommendation.rule_version}</span>
+                              <button
+                                type="button"
+                                data-testid="accept-recommendation-button"
+                                disabled={isAccepted || isAccepting}
+                                onClick={() => acceptActionRecommendation(recommendation)}
+                              >
+                                {isAccepted
+                                  ? "Added to actions"
+                                  : isAccepting
+                                    ? "Adding…"
+                                    : "Add to my actions"}
+                              </button>
+                            </li>
+                          );
+                        })}
                       </ul>
                     )
                   ) : (

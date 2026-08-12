@@ -233,3 +233,56 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await confirmedInsight.getByRole("link", { name: "View evidence in Health History" }).click();
   await expect(page).toHaveURL(/\/history\?person_id=/);
 });
+
+test("Today recommendation acceptance is explicit, idempotent, and reload-safe", async ({
+  page,
+}) => {
+  const marker = Date.now();
+  await register(page, `recommendation-owner-${marker}@example.com`, "Recommendation Owner");
+
+  await page.getByTestId("person-card").first().click();
+  const todaySection = page.getByTestId("today-section");
+  await expect(todaySection.getByTestId("today-action-recommendations-empty")).toBeVisible();
+
+  const metricForm = page.getByTestId("metric-form");
+  await metricForm.locator('input[name="systolic_bp_mm_hg"]').fill("145");
+  await metricForm.locator('input[name="diastolic_bp_mm_hg"]').fill("95");
+  await metricForm.locator('input[name="heart_rate_bpm"]').fill("72");
+  await metricForm.getByRole("button", { name: "Save metric" }).click();
+
+  await expect(todaySection.getByTestId("today-risk-alert-card")).toHaveCount(1);
+  const recommendation = todaySection.getByTestId("today-action-recommendation-card");
+  await expect(recommendation).toHaveCount(1);
+  await expect(recommendation).toContainText("Blood pressure signal");
+  const actionList = page.getByTestId("action-list");
+  await expect(actionList.getByTestId("action-card")).toHaveCount(0);
+
+  const acceptButton = recommendation.getByTestId("accept-recommendation-button");
+  await expect(acceptButton).toHaveText("Add to my actions");
+  await acceptButton.click();
+
+  await expect(actionList.getByTestId("action-card")).toHaveCount(1);
+  await expect(actionList.getByTestId("action-card")).toContainText(
+    "Review: Blood pressure signal",
+  );
+  await expect(acceptButton).toHaveText("Added to actions");
+  await expect(acceptButton).toBeDisabled();
+  await acceptButton.evaluate((element) => (element as HTMLButtonElement).click());
+  await page.waitForTimeout(100);
+  await expect(actionList.getByTestId("action-card")).toHaveCount(1);
+
+  await page.reload();
+  const reloadedTodaySection = page.getByTestId("today-section");
+  await expect(reloadedTodaySection.getByTestId("today-risk-alert-card")).toHaveCount(1);
+  const reloadedRecommendation = reloadedTodaySection.getByTestId(
+    "today-action-recommendation-card",
+  );
+  await expect(reloadedRecommendation).toHaveCount(1);
+  await expect(
+    reloadedRecommendation.getByTestId("accept-recommendation-button"),
+  ).toHaveText("Added to actions");
+  await expect(
+    reloadedRecommendation.getByTestId("accept-recommendation-button"),
+  ).toBeDisabled();
+  await expect(page.getByTestId("action-list").getByTestId("action-card")).toHaveCount(1);
+});

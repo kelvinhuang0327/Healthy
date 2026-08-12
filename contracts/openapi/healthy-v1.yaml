@@ -60,6 +60,84 @@
         "title": "AccountSummary",
         "type": "object"
       },
+      "ActionRecommendationAcceptanceCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "observation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Id"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
+          "rule_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_kind": {
+            "enum": [
+              "health_metric",
+              "lab_report"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule_version",
+          "source_kind",
+          "source_id",
+          "observed_at"
+        ],
+        "title": "ActionRecommendationAcceptanceCreate",
+        "type": "object"
+      },
+      "ActionRecommendationAcceptanceSummary": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/HealthActionSummary"
+          },
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action",
+          "created"
+        ],
+        "title": "ActionRecommendationAcceptanceSummary",
+        "type": "object"
+      },
       "ActionRecommendationSummary": {
         "properties": {
           "evidence": {
@@ -317,6 +395,14 @@
         "title": "HealthActionCreate",
         "type": "object"
       },
+      "HealthActionOriginType": {
+        "enum": [
+          "manual",
+          "action_recommendation"
+        ],
+        "title": "HealthActionOriginType",
+        "type": "string"
+      },
       "HealthActionOutcomeCreate": {
         "additionalProperties": false,
         "properties": {
@@ -431,10 +517,109 @@
             "title": "Id",
             "type": "string"
           },
+          "origin_type": {
+            "$ref": "#/components/schemas/HealthActionOriginType"
+          },
           "person_id": {
             "format": "uuid",
             "title": "Person Id",
             "type": "string"
+          },
+          "recommendation_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Code"
+          },
+          "recommendation_rule_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Rule Version"
+          },
+          "source_evidence_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Evidence Id"
+          },
+          "source_evidence_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "health_metric",
+                  "lab_report"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Evidence Kind"
+          },
+          "source_evidence_observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Evidence Observed At"
+          },
+          "source_observation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Observation Id"
+          },
+          "source_report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Report Id"
+          },
+          "source_rule_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Rule Code"
           },
           "status": {
             "$ref": "#/components/schemas/HealthActionStatus"
@@ -455,6 +640,15 @@
           "title",
           "description",
           "due_at",
+          "origin_type",
+          "recommendation_code",
+          "recommendation_rule_version",
+          "source_rule_code",
+          "source_evidence_kind",
+          "source_evidence_id",
+          "source_observation_id",
+          "source_report_id",
+          "source_evidence_observed_at",
           "status",
           "completed_at",
           "created_at",
@@ -2176,6 +2370,102 @@
           }
         ],
         "summary": "Get Action Recommendations"
+      }
+    },
+    "/v1/persons/{person_id}/action-recommendations/{recommendation_code}/accept": {
+      "post": {
+        "operationId": "post_action_recommendation_acceptance_v1_persons__person_id__action_recommendations__recommendation_code__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "recommendation_code",
+            "required": true,
+            "schema": {
+              "title": "Recommendation Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthy_csrf",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthy Csrf"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionRecommendationAcceptanceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionRecommendationAcceptanceSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Post Action Recommendation Acceptance"
       }
     },
     "/v1/persons/{person_id}/actions": {

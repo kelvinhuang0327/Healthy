@@ -24,6 +24,8 @@ from healthy.presentation.dependencies import (
 from healthy.presentation.schemas import (
     AccountCreate,
     AccountSummary,
+    ActionRecommendationAcceptanceCreate,
+    ActionRecommendationAcceptanceSummary,
     ActionRecommendationsSummary,
     ActionRecommendationSummary,
     AssistantTodaySummary,
@@ -472,6 +474,51 @@ def get_action_recommendations(
             )
             for recommendation in result.recommendations
         ],
+    )
+
+
+@router.post(
+    "/persons/{person_id}/action-recommendations/{recommendation_code}/accept",
+    response_model=ActionRecommendationAcceptanceSummary,
+)
+def post_action_recommendation_acceptance(
+    person_id: uuid.UUID,
+    recommendation_code: str,
+    payload: ActionRecommendationAcceptanceCreate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> ActionRecommendationAcceptanceSummary:
+    try:
+        result = services.accept_action_recommendation(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            recommendation_code=recommendation_code,
+            rule_version=payload.rule_version,
+            source_kind=payload.source_kind,
+            source_id=payload.source_id,
+            observation_id=payload.observation_id,
+            report_id=payload.report_id,
+            observed_at=payload.observed_at,
+        )
+    except services.ActionRecommendationNotCurrentError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Recommendation is no longer current",
+        ) from error
+    except services.HealthActionIntegrityError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid request",
+        ) from error
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return ActionRecommendationAcceptanceSummary(
+        action=HealthActionSummary.model_validate(result.action),
+        created=result.created,
     )
 
 

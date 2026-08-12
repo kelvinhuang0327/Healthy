@@ -26,6 +26,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/persons/{person_id}/health-score",
         "/v1/persons/{person_id}/risk-alerts",
         "/v1/persons/{person_id}/action-recommendations",
+        "/v1/persons/{person_id}/action-recommendations/{recommendation_code}/accept",
         "/v1/persons/{person_id}/symptoms",
         "/v1/persons/{person_id}/symptoms/{symptom_id}",
         "/v1/persons/{person_id}/actions",
@@ -61,6 +62,10 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("GET", "/v1/persons/{person_id}/health-score"),
         ("GET", "/v1/persons/{person_id}/risk-alerts"),
         ("GET", "/v1/persons/{person_id}/action-recommendations"),
+        (
+            "POST",
+            "/v1/persons/{person_id}/action-recommendations/{recommendation_code}/accept",
+        ),
         ("POST", "/v1/persons/{person_id}/symptoms"),
         ("GET", "/v1/persons/{person_id}/symptoms"),
         ("GET", "/v1/persons/{person_id}/symptoms/{symptom_id}"),
@@ -197,6 +202,12 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "ck_health_actions_status_allowed",
         "ck_health_actions_status_completion_consistent",
         "ck_health_actions_description_length",
+        "ck_health_actions_origin_type_allowed",
+        "ck_health_actions_recommendation_fingerprint_length",
+        "ck_health_actions_recommendation_provenance_consistent",
+    }
+    assert {index["name"] for index in inspector.get_indexes("health_actions")} >= {
+        "uq_health_actions_person_recommendation_fingerprint"
     }
     assert {column["name"] for column in inspector.get_columns("health_action_outcomes")} == {
         "id",

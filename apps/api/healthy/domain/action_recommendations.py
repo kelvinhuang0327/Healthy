@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -104,6 +106,34 @@ class ActionRecommendation:
 @dataclass(frozen=True, slots=True)
 class ActionRecommendations:
     recommendations: tuple[ActionRecommendation, ...]
+
+
+def recommendation_identity_fingerprint(
+    *,
+    person_id: uuid.UUID,
+    recommendation_code: str,
+    rule_version: str,
+    source_kind: ActionRecommendationSourceKind,
+    source_id: uuid.UUID,
+    observation_id: uuid.UUID | None,
+    report_id: uuid.UUID | None,
+) -> str:
+    """Return the stable idempotency identity for one exact recommendation."""
+    canonical_identity = json.dumps(
+        {
+            "observation_id": str(observation_id) if observation_id is not None else None,
+            "person_id": str(person_id),
+            "recommendation_code": recommendation_code,
+            "report_id": str(report_id) if report_id is not None else None,
+            "rule_version": rule_version,
+            "source_id": str(source_id),
+            "source_kind": source_kind,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical_identity.encode("utf-8")).hexdigest()
 
 
 def build_action_recommendations(

@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, joinedload
 
-from healthy.domain.actions import HealthActionStatus
+from healthy.domain.actions import HealthActionOriginType, HealthActionStatus
 from healthy.infrastructure.models import (
     HealthAction,
     HealthActionOutcome,
@@ -254,9 +254,58 @@ class HealthActionRepository:
             title=title,
             description=description,
             due_at=due_at,
+            origin_type=HealthActionOriginType.MANUAL,
         )
         database_session.add(action)
         return action
+
+    @staticmethod
+    def create_from_recommendation(
+        database_session: Session,
+        person_id: uuid.UUID,
+        *,
+        title: str,
+        description: str | None,
+        recommendation_fingerprint: str,
+        recommendation_code: str,
+        recommendation_rule_version: str,
+        source_rule_code: str,
+        source_evidence_kind: str,
+        source_evidence_id: uuid.UUID,
+        source_observation_id: uuid.UUID | None,
+        source_report_id: uuid.UUID | None,
+        source_evidence_observed_at: datetime,
+    ) -> HealthAction:
+        action = HealthAction(
+            person_id=person_id,
+            title=title,
+            description=description,
+            due_at=None,
+            origin_type=HealthActionOriginType.ACTION_RECOMMENDATION,
+            recommendation_fingerprint=recommendation_fingerprint,
+            recommendation_code=recommendation_code,
+            recommendation_rule_version=recommendation_rule_version,
+            source_rule_code=source_rule_code,
+            source_evidence_kind=source_evidence_kind,
+            source_evidence_id=source_evidence_id,
+            source_observation_id=source_observation_id,
+            source_report_id=source_report_id,
+            source_evidence_observed_at=source_evidence_observed_at,
+        )
+        database_session.add(action)
+        return action
+
+    @staticmethod
+    def get_by_recommendation_fingerprint(
+        database_session: Session,
+        person_id: uuid.UUID,
+        recommendation_fingerprint: str,
+    ) -> HealthAction | None:
+        statement = select(HealthAction).where(
+            HealthAction.person_id == person_id,
+            HealthAction.recommendation_fingerprint == recommendation_fingerprint,
+        )
+        return database_session.scalar(statement)
 
     @staticmethod
     def list_for_person(database_session: Session, person_id: uuid.UUID) -> list[HealthAction]:

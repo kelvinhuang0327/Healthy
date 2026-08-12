@@ -86,6 +86,27 @@ export type HealthScore = {
   limitations: string;
 };
 
+export type RiskAlert = {
+  rule_code: string;
+  risk_type: string;
+  severity: "medium" | "high";
+  status: "active";
+  evidence: {
+    source_kind: "health_metric" | "lab_report";
+    source_id: string;
+    person_id: string;
+    observed_at: string;
+    observation_id: string | null;
+    report_id: string | null;
+    report_source_name: string | null;
+  };
+};
+
+export type RiskAlerts = {
+  active_count: number;
+  alerts: RiskAlert[];
+};
+
 export type SymptomLog = {
   id: string;
   person_id: string;
@@ -290,6 +311,8 @@ export const api = {
     request<HealthMetric[]>(`/persons/${personId}/metrics`),
   healthScore: (personId: string) =>
     request<HealthScore>(`/persons/${personId}/health-score`),
+  riskAlerts: (personId: string) =>
+    request<RiskAlerts>(`/persons/${personId}/risk-alerts`),
   createHealthMetric: (
     personId: string,
     payload: {

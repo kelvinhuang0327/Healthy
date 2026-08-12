@@ -10,9 +10,35 @@ import {
   type HealthReportSummary,
   type HealthScore,
   type Person,
+  type RiskAlert,
+  type RiskAlerts,
   type SessionSummary,
   type SymptomLog,
 } from "../lib/api";
+
+function compareRiskAlerts(left: RiskAlert, right: RiskAlert): number {
+  const severityRank = { high: 0, medium: 1 } as const;
+  const severityDifference =
+    severityRank[left.severity] - severityRank[right.severity];
+  if (severityDifference !== 0) {
+    return severityDifference;
+  }
+
+  const observedAtDifference =
+    new Date(right.evidence.observed_at).getTime() -
+    new Date(left.evidence.observed_at).getTime();
+  if (observedAtDifference !== 0) {
+    return observedAtDifference;
+  }
+
+  if (left.rule_code !== right.rule_code) {
+    return left.rule_code < right.rule_code ? -1 : 1;
+  }
+  if (left.evidence.source_id !== right.evidence.source_id) {
+    return left.evidence.source_id < right.evidence.source_id ? -1 : 1;
+  }
+  return 0;
+}
 
 export default function Home() {
   const [session, setSession] = useState<SessionSummary | null>(null);
@@ -27,6 +53,7 @@ export default function Home() {
   const [healthReports, setHealthReports] = useState<HealthReportSummary[]>([]);
   const [selectedReportDetail, setSelectedReportDetail] =
     useState<HealthReportDetail | null>(null);
+  const [riskAlerts, setRiskAlerts] = useState<RiskAlerts | null>(null);
   const [assistantToday, setAssistantToday] = useState<AssistantToday | null>(
     null,
   );
@@ -52,6 +79,7 @@ export default function Home() {
       setHealthActions([]);
       setHealthReports([]);
       setSelectedReportDetail(null);
+      setRiskAlerts(null);
       setAssistantToday(null);
     }
   }
@@ -86,17 +114,21 @@ export default function Home() {
       api.healthActions(effectiveSelectedPersonId),
       api.healthReports(effectiveSelectedPersonId),
       api.assistantToday(effectiveSelectedPersonId),
+      api.riskAlerts(effectiveSelectedPersonId),
     ])
-      .then(([metricRows, score, symptomRows, actionRows, reportRows, today]) => {
-        if (!cancelled) {
-          setMetrics(metricRows);
-          setHealthScore(score);
-          setSymptomLogs(symptomRows);
-          setHealthActions(actionRows);
-          setHealthReports(reportRows);
-          setAssistantToday(today);
-        }
-      })
+      .then(
+        ([metricRows, score, symptomRows, actionRows, reportRows, today, alerts]) => {
+          if (!cancelled) {
+            setMetrics(metricRows);
+            setHealthScore(score);
+            setSymptomLogs(symptomRows);
+            setHealthActions(actionRows);
+            setHealthReports(reportRows);
+            setAssistantToday(today);
+            setRiskAlerts(alerts);
+          }
+        },
+      )
       .catch(() => {
         if (!cancelled) {
           setMetrics([]);
@@ -106,6 +138,7 @@ export default function Home() {
           setHealthReports([]);
           setSelectedReportDetail(null);
           setAssistantToday(null);
+          setRiskAlerts(null);
         }
       });
     return () => {
@@ -136,6 +169,7 @@ export default function Home() {
       setPersons((current) =>
         current.map((person) => (person.id === updated.id ? updated : person)),
       );
+      await refreshRiskAlerts();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Height update failed");
     } finally {
@@ -154,6 +188,20 @@ export default function Home() {
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Could not refresh Today",
+      );
+    }
+  }
+
+  async function refreshRiskAlerts() {
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      setRiskAlerts(await api.riskAlerts(personId));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not refresh Risk Alerts",
       );
     }
   }
@@ -235,6 +283,9 @@ export default function Home() {
       setHealthScore(null);
       setSymptomLogs([]);
       setHealthActions([]);
+      setHealthReports([]);
+      setSelectedReportDetail(null);
+      setRiskAlerts(null);
       setAssistantToday(null);
       setError("");
     } catch (reason) {
@@ -281,6 +332,7 @@ export default function Home() {
       setMetrics(rows);
       await refreshHealthScore();
       await refreshAssistantToday();
+      await refreshRiskAlerts();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Metric entry failed",
@@ -430,6 +482,7 @@ export default function Home() {
       setSelectedReportDetail(confirmed);
       setHealthReports(await api.healthReports(personId));
       await refreshAssistantToday();
+      await refreshRiskAlerts();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Report confirmation failed",
@@ -451,6 +504,10 @@ export default function Home() {
       );
     }
   }
+
+  const displayedRiskAlerts = riskAlerts
+    ? [...riskAlerts.alerts].sort(compareRiskAlerts)
+    : [];
 
   return (
 
@@ -535,7 +592,12 @@ export default function Home() {
                   key={person.id}
                   data-testid="person-card"
                   data-person-id={person.id}
-                  onClick={() => setSelectedPersonId(person.id)}
+                  onClick={() => {
+                    setSelectedPersonId(person.id);
+                    if (person.id !== effectiveSelectedPersonId) {
+                      setRiskAlerts(null);
+                    }
+                  }}
                   role="button"
                   tabIndex={0}
                 >
@@ -1129,6 +1191,55 @@ export default function Home() {
                     <p data-testid="today-latest-metric-empty">
                       No health metric recorded yet.
                     </p>
+                  )}
+
+                  <h3>Risk alerts</h3>
+                  <p data-testid="today-risk-alerts-disclaimer">
+                    These are deterministic signals from recorded health data,
+                    not a diagnosis or comprehensive medical risk assessment.
+                  </p>
+                  {riskAlerts ? (
+                    <>
+                      <p data-testid="today-risk-alert-count">
+                        Active alerts: {riskAlerts.active_count}
+                      </p>
+                      {displayedRiskAlerts.length === 0 ? (
+                        <p data-testid="today-risk-alerts-empty">
+                          No deterministic risk alerts were found in the health
+                          measurements and confirmed lab observations currently
+                          supported by Healthy.
+                        </p>
+                      ) : (
+                        <ul data-testid="today-risk-alert-list">
+                          {displayedRiskAlerts.map((alert) => (
+                            <li
+                              key={`${alert.rule_code}-${alert.evidence.source_id}-${alert.evidence.observation_id ?? ""}`}
+                              data-testid="today-risk-alert-card"
+                              data-risk-alert-severity={alert.severity}
+                            >
+                              <strong>{alert.rule_code}</strong>
+                              <span>Risk: {alert.risk_type}</span>
+                              <span>Severity: {alert.severity}</span>
+                              <span>Status: {alert.status}</span>
+                              <span>
+                                Evidence: {alert.evidence.source_kind} ·{" "}
+                                {alert.evidence.source_id}
+                              </span>
+                              {alert.evidence.report_source_name ? (
+                                <span>
+                                  Report source: {alert.evidence.report_source_name}
+                                </span>
+                              ) : null}
+                              <time dateTime={alert.evidence.observed_at}>
+                                Observed: {new Date(alert.evidence.observed_at).toLocaleString()}
+                              </time>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  ) : (
+                    <p>Loading risk alerts&hellip;</p>
                   )}
 
                   <h3>Evidence-linked insights</h3>

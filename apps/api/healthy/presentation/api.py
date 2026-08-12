@@ -47,6 +47,9 @@ from healthy.presentation.schemas import (
     PersonHeightUpdate,
     PersonSummary,
     RegistrationResponse,
+    RiskAlertEvidenceSummary,
+    RiskAlertsSummary,
+    RiskAlertSummary,
     SessionCreate,
     SessionSummary,
     SymptomLogCreate,
@@ -378,6 +381,48 @@ def get_health_score(
             unsupported_sources=list(result.coverage.unsupported_sources),
         ),
         limitations=result.limitations,
+    )
+
+
+@router.get(
+    "/persons/{person_id}/risk-alerts",
+    response_model=RiskAlertsSummary,
+)
+def get_risk_alerts(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> RiskAlertsSummary:
+    result = services.get_risk_alerts(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return RiskAlertsSummary(
+        active_count=result.active_count,
+        alerts=[
+            RiskAlertSummary(
+                rule_code=alert.rule_code,
+                risk_type=alert.risk_type,
+                severity=alert.severity,
+                status=alert.status,
+                evidence=RiskAlertEvidenceSummary(
+                    source_kind=alert.evidence.source_kind,
+                    source_id=alert.evidence.source_id,
+                    person_id=alert.evidence.person_id,
+                    observed_at=alert.evidence.observed_at,
+                    observation_id=alert.evidence.observation_id,
+                    report_id=alert.evidence.report_id,
+                    report_source_name=alert.evidence.report_source_name,
+                ),
+            )
+            for alert in result.alerts
+        ],
     )
 
 

@@ -243,6 +243,29 @@ class HealthScoreSummary(BaseModel):
     limitations: str
 
 
+class RiskAlertEvidenceSummary(BaseModel):
+    source_kind: Literal["health_metric", "lab_report"]
+    source_id: uuid.UUID
+    person_id: uuid.UUID
+    observed_at: datetime
+    observation_id: uuid.UUID | None
+    report_id: uuid.UUID | None
+    report_source_name: str | None
+
+
+class RiskAlertSummary(BaseModel):
+    rule_code: str
+    risk_type: str
+    severity: Literal["medium", "high"]
+    status: Literal["active"]
+    evidence: RiskAlertEvidenceSummary
+
+
+class RiskAlertsSummary(BaseModel):
+    active_count: int
+    alerts: list[RiskAlertSummary]
+
+
 class SymptomLogCreate(BaseModel):
     symptom: str = Field(min_length=1, max_length=symptoms_domain.SYMPTOM_MAX_LENGTH)
     occurred_at: datetime

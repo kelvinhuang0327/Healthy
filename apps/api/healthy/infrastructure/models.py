@@ -308,6 +308,41 @@ class HealthAction(Base):
             f" <= {actions_domain.DESCRIPTION_MAX_LENGTH}",
             name="description_length",
         ),
+        CheckConstraint(
+            "origin_type IN ('manual', 'action_recommendation')",
+            name="origin_type_allowed",
+        ),
+        CheckConstraint(
+            "recommendation_fingerprint IS NULL OR char_length(recommendation_fingerprint) = 64",
+            name="recommendation_fingerprint_length",
+        ),
+        CheckConstraint(
+            "(origin_type = 'manual'"
+            " AND recommendation_fingerprint IS NULL"
+            " AND recommendation_code IS NULL"
+            " AND recommendation_rule_version IS NULL"
+            " AND source_rule_code IS NULL"
+            " AND source_evidence_kind IS NULL"
+            " AND source_evidence_id IS NULL"
+            " AND source_observation_id IS NULL"
+            " AND source_report_id IS NULL"
+            " AND source_evidence_observed_at IS NULL)"
+            " OR (origin_type = 'action_recommendation'"
+            " AND recommendation_fingerprint IS NOT NULL"
+            " AND recommendation_code IS NOT NULL"
+            " AND recommendation_rule_version IS NOT NULL"
+            " AND source_rule_code IS NOT NULL"
+            " AND source_evidence_kind IS NOT NULL"
+            " AND source_evidence_id IS NOT NULL"
+            " AND source_evidence_observed_at IS NOT NULL)",
+            name="recommendation_provenance_consistent",
+        ),
+        Index(
+            "uq_health_actions_person_recommendation_fingerprint",
+            "person_id",
+            "recommendation_fingerprint",
+            unique=True,
+        ),
         Index(
             "ix_health_actions_person_timeline",
             "person_id",
@@ -329,6 +364,20 @@ class HealthAction(Base):
     title: Mapped[str] = mapped_column(String(actions_domain.TITLE_MAX_LENGTH))
     description: Mapped[str | None] = mapped_column(String(actions_domain.DESCRIPTION_MAX_LENGTH))
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    origin_type: Mapped[str] = mapped_column(
+        String(32),
+        default=actions_domain.HealthActionOriginType.MANUAL,
+        server_default=text("'manual'"),
+    )
+    recommendation_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    recommendation_code: Mapped[str | None] = mapped_column(String(128))
+    recommendation_rule_version: Mapped[str | None] = mapped_column(String(128))
+    source_rule_code: Mapped[str | None] = mapped_column(String(128))
+    source_evidence_kind: Mapped[str | None] = mapped_column(String(32))
+    source_evidence_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    source_observation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    source_report_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    source_evidence_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(
         String(20),
         default=actions_domain.HealthActionStatus.TODO,

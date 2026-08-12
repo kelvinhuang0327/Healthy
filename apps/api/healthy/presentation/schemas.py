@@ -284,6 +284,32 @@ class ActionRecommendationsSummary(BaseModel):
     recommendations: list[ActionRecommendationSummary]
 
 
+class ActionRecommendationAcceptanceCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rule_version: str = Field(min_length=1, max_length=128)
+    source_kind: Literal["health_metric", "lab_report"]
+    source_id: uuid.UUID
+    observation_id: uuid.UUID | None = None
+    report_id: uuid.UUID | None = None
+    observed_at: datetime
+
+    @field_validator("rule_version")
+    @classmethod
+    def _normalize_rule_version(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("rule_version must not be blank")
+        return normalized
+
+    @field_validator("observed_at")
+    @classmethod
+    def _normalize_observed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("observed_at must include timezone information")
+        return value.astimezone(UTC)
+
+
 class SymptomLogCreate(BaseModel):
     symptom: str = Field(min_length=1, max_length=symptoms_domain.SYMPTOM_MAX_LENGTH)
     occurred_at: datetime
@@ -372,10 +398,24 @@ class HealthActionSummary(BaseModel):
     title: str
     description: str | None
     due_at: datetime | None
+    origin_type: actions_domain.HealthActionOriginType
+    recommendation_code: str | None
+    recommendation_rule_version: str | None
+    source_rule_code: str | None
+    source_evidence_kind: Literal["health_metric", "lab_report"] | None
+    source_evidence_id: uuid.UUID | None
+    source_observation_id: uuid.UUID | None
+    source_report_id: uuid.UUID | None
+    source_evidence_observed_at: datetime | None
     status: actions_domain.HealthActionStatus
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class ActionRecommendationAcceptanceSummary(BaseModel):
+    action: HealthActionSummary
+    created: bool
 
 
 class HealthActionOutcomeCreate(BaseModel):

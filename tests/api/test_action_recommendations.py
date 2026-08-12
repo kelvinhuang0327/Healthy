@@ -339,3 +339,6 @@ def test_get_action_recommendations_performs_zero_writes(client: TestClient) -> 
     assert first.status_code == second.status_code == 200
     assert first.json() == second.json()
     assert commit_sessions == []
+    actions = client.get(f"/v1/persons/{person_id}/actions")
+    assert actions.status_code == 200
+    assert actions.json() == []

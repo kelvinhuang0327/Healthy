@@ -53,6 +53,15 @@ def test_create_returns_only_server_contract_fields_and_normalizes_input(
         "title",
         "description",
         "due_at",
+        "origin_type",
+        "recommendation_code",
+        "recommendation_rule_version",
+        "source_rule_code",
+        "source_evidence_kind",
+        "source_evidence_id",
+        "source_observation_id",
+        "source_report_id",
+        "source_evidence_observed_at",
         "status",
         "completed_at",
         "created_at",
@@ -63,6 +72,15 @@ def test_create_returns_only_server_contract_fields_and_normalizes_input(
     assert body["title"] == "Take an evening walk"
     assert body["description"] == "Walk for twenty minutes"
     assert body["due_at"] == "2026-08-01T10:30:00Z"
+    assert body["origin_type"] == "manual"
+    assert body["recommendation_code"] is None
+    assert body["recommendation_rule_version"] is None
+    assert body["source_rule_code"] is None
+    assert body["source_evidence_kind"] is None
+    assert body["source_evidence_id"] is None
+    assert body["source_observation_id"] is None
+    assert body["source_report_id"] is None
+    assert body["source_evidence_observed_at"] is None
     assert body["status"] == "todo"
     assert body["completed_at"] is None
     assert datetime.fromisoformat(body["created_at"])

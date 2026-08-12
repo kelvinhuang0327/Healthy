@@ -68,6 +68,10 @@ class HealthActionIntegrityError(Exception):
     pass
 
 
+class ActionRecommendationNotCurrentError(Exception):
+    pass
+
+
 class HealthActionOutcomeIntegrityError(Exception):
     pass
 
@@ -105,6 +109,12 @@ class AssistantToday:
     daily_attention: tuple[assistant_domain.DailyAttentionItem, ...]
     recent_confirmed_observations: list[HealthReportObservationModel] = field(default_factory=list)
     insights: tuple[insights_domain.Insight, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ActionRecommendationAcceptanceResult:
+    action: HealthAction
+    created: bool
 
 
 def _session_record(account_id: uuid.UUID, max_age_seconds: int) -> tuple[SessionRecord, str]:
@@ -459,6 +469,129 @@ def create_health_action(
         database_session.rollback()
         raise HealthActionIntegrityError from error
     return action
+
+
+def accept_action_recommendation(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    recommendation_code: str,
+    rule_version: str,
+    source_kind: action_recommendations_domain.ActionRecommendationSourceKind,
+    source_id: uuid.UUID,
+    observation_id: uuid.UUID | None,
+    report_id: uuid.UUID | None,
+    observed_at: datetime,
+) -> ActionRecommendationAcceptanceResult | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+
+    recommendation_fingerprint = action_recommendations_domain.recommendation_identity_fingerprint(
+        person_id=person.id,
+        recommendation_code=recommendation_code,
+        rule_version=rule_version,
+        source_kind=source_kind,
+        source_id=source_id,
+        observation_id=observation_id,
+        report_id=report_id,
+    )
+    existing = HealthActionRepository.get_by_recommendation_fingerprint(
+        database_session,
+        person.id,
+        recommendation_fingerprint,
+    )
+    if existing is not None:
+        return ActionRecommendationAcceptanceResult(action=existing, created=False)
+
+    current_recommendations = get_action_recommendations(
+        database_session,
+        owner_account_id=owner_account_id,
+        person_id=person.id,
+    )
+    if current_recommendations is None:
+        return None
+    recommendation = next(
+        (
+            item
+            for item in current_recommendations.recommendations
+            if _recommendation_matches_acceptance_request(
+                item,
+                person_id=person.id,
+                recommendation_code=recommendation_code,
+                rule_version=rule_version,
+                source_kind=source_kind,
+                source_id=source_id,
+                observation_id=observation_id,
+                report_id=report_id,
+                observed_at=observed_at,
+            )
+        ),
+        None,
+    )
+    if recommendation is None:
+        raise ActionRecommendationNotCurrentError
+
+    action = HealthActionRepository.create_from_recommendation(
+        database_session,
+        person.id,
+        title=actions_domain.normalize_title(f"Review: {recommendation.title}"),
+        description=actions_domain.normalize_description(recommendation.suggested_action),
+        recommendation_fingerprint=recommendation_fingerprint,
+        recommendation_code=recommendation.recommendation_code,
+        recommendation_rule_version=recommendation.rule_version,
+        source_rule_code=recommendation.source_rule_code,
+        source_evidence_kind=recommendation.evidence.source_kind,
+        source_evidence_id=recommendation.evidence.source_id,
+        source_observation_id=recommendation.evidence.observation_id,
+        source_report_id=recommendation.evidence.report_id,
+        source_evidence_observed_at=recommendation.evidence.observed_at,
+    )
+    try:
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        existing = HealthActionRepository.get_by_recommendation_fingerprint(
+            database_session,
+            person.id,
+            recommendation_fingerprint,
+        )
+        if existing is not None:
+            return ActionRecommendationAcceptanceResult(action=existing, created=False)
+        raise HealthActionIntegrityError from error
+    return ActionRecommendationAcceptanceResult(action=action, created=True)
+
+
+def _recommendation_matches_acceptance_request(
+    recommendation: action_recommendations_domain.ActionRecommendation,
+    *,
+    person_id: uuid.UUID,
+    recommendation_code: str,
+    rule_version: str,
+    source_kind: action_recommendations_domain.ActionRecommendationSourceKind,
+    source_id: uuid.UUID,
+    observation_id: uuid.UUID | None,
+    report_id: uuid.UUID | None,
+    observed_at: datetime,
+) -> bool:
+    evidence = recommendation.evidence
+    return (
+        recommendation.recommendation_code == recommendation_code
+        and recommendation.rule_version == rule_version
+        and evidence.person_id == person_id
+        and evidence.source_kind == source_kind
+        and evidence.source_id == source_id
+        and evidence.observation_id == observation_id
+        and evidence.report_id == report_id
+        and _as_utc(evidence.observed_at) == _as_utc(observed_at)
+    )
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def list_health_actions(

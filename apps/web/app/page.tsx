@@ -103,7 +103,9 @@ export default function Home() {
   const [assistantToday, setAssistantToday] = useState<AssistantToday | null>(
     null,
   );
-  const [browserTimeZone, setBrowserTimeZone] = useState("UTC");
+  const [browserTimeZone] = useState(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  );
   const [heightSaving, setHeightSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -164,10 +166,6 @@ export default function Home() {
         setSession(null);
         setPersons([]);
       });
-  }, []);
-
-  useEffect(() => {
-    setBrowserTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   }, []);
 
   const selectedPerson =

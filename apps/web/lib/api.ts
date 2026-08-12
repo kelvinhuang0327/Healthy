@@ -43,6 +43,23 @@ export type HealthMetric = {
   created_at: string;
 };
 
+export type HealthAnalyticsMetric = {
+  metric: string;
+  label: string;
+  unit: string;
+  points: number;
+  first_value: number | null;
+  last_value: number | null;
+  change_percent: number | null;
+  slope_per_day: number | null;
+  direction: "up" | "down" | "stable" | "no_data";
+};
+
+export type HealthAnalytics = {
+  period_days: number;
+  summaries: HealthAnalyticsMetric[];
+};
+
 export type HealthScoreComponent = {
   kind: "cardiovascular" | "metabolic" | "activity" | "weight" | "overall";
   label: string;
@@ -359,4 +376,6 @@ export const api = {
     request<AssistantToday>(`/persons/${personId}/assistant/today`),
   healthHistory: (personId: string) =>
     request<HealthHistoryItem[]>(`/persons/${personId}/history`),
+  healthAnalytics: (personId: string, days = 90) =>
+    request<HealthAnalytics>(`/persons/${personId}/analytics?days=${days}`),
 };

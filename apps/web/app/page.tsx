@@ -556,13 +556,22 @@ export default function Home() {
               ))}
             </ul>
             {selectedPerson ? (
-              <a
-                className="history-link"
-                data-testid="history-link"
-                href={`/history?person_id=${encodeURIComponent(selectedPerson.id)}`}
-              >
-                View Health History
-              </a>
+              <div>
+                <a
+                  className="history-link"
+                  data-testid="history-link"
+                  href={`/history?person_id=${encodeURIComponent(selectedPerson.id)}`}
+                >
+                  View Health History
+                </a>
+                <a
+                  className="history-link"
+                  data-testid="analytics-link"
+                  href={`/analytics?person_id=${encodeURIComponent(selectedPerson.id)}`}
+                >
+                  View Health Analytics
+                </a>
+              </div>
             ) : null}
           </article>
 

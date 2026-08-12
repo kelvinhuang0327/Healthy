@@ -381,6 +381,114 @@
         "title": "HealthActionSummary",
         "type": "object"
       },
+      "HealthAnalyticsMetricSummary": {
+        "properties": {
+          "change_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Percent"
+          },
+          "direction": {
+            "enum": [
+              "up",
+              "down",
+              "stable",
+              "no_data"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "first_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Value"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Value"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "points": {
+            "title": "Points",
+            "type": "integer"
+          },
+          "slope_per_day": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slope Per Day"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric",
+          "label",
+          "unit",
+          "points",
+          "first_value",
+          "last_value",
+          "change_percent",
+          "slope_per_day",
+          "direction"
+        ],
+        "title": "HealthAnalyticsMetricSummary",
+        "type": "object"
+      },
+      "HealthAnalyticsSummary": {
+        "properties": {
+          "period_days": {
+            "title": "Period Days",
+            "type": "integer"
+          },
+          "summaries": {
+            "items": {
+              "$ref": "#/components/schemas/HealthAnalyticsMetricSummary"
+            },
+            "title": "Summaries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "period_days",
+          "summaries"
+        ],
+        "title": "HealthAnalyticsSummary",
+        "type": "object"
+      },
       "HealthHistoryItemSummary": {
         "properties": {
           "detail": {
@@ -2305,6 +2413,63 @@
           }
         ],
         "summary": "Get Health Action Outcome"
+      }
+    },
+    "/v1/persons/{person_id}/analytics": {
+      "get": {
+        "operationId": "get_health_analytics_v1_persons__person_id__analytics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 365,
+              "minimum": 7,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthAnalyticsSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Health Analytics"
       }
     },
     "/v1/persons/{person_id}/assistant/today": {

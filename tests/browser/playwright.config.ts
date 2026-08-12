@@ -14,6 +14,7 @@ export default defineConfig({
     "health_assistant_today.spec.ts",
     "health_reports.spec.ts",
     "health_history.spec.ts",
+    "health_analytics.spec.ts",
     "height_profile.spec.ts",
   ],
 

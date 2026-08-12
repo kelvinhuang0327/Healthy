@@ -286,3 +286,50 @@ test("Today recommendation acceptance is explicit, idempotent, and reload-safe",
   ).toBeDisabled();
   await expect(page.getByTestId("action-list").getByTestId("action-card")).toHaveCount(1);
 });
+
+test("configured daily reminder is due, acknowledged, and reload-safe", async ({
+  page,
+}) => {
+  const marker = Date.now();
+  await register(page, `reminder-owner-${marker}@example.com`, "Reminder Owner");
+  await page.getByTestId("person-card").first().click();
+
+  const actionForm = page.getByTestId("action-form");
+  await actionForm.getByLabel("Title").fill("Drink water");
+  await actionForm.getByRole("button", { name: "Create action" }).click();
+
+  const actionCard = page
+    .getByTestId("action-list")
+    .getByTestId("action-card")
+    .filter({ hasText: "Drink water" });
+  await expect(actionCard).toBeVisible();
+  const reminderForm = actionCard.getByTestId("reminder-form");
+  await reminderForm.getByLabel("Local reminder time").fill("00:00");
+  await reminderForm.getByLabel("IANA timezone").fill("UTC");
+  await reminderForm.getByRole("button", { name: "Save reminder" }).click();
+
+  const today = page.getByTestId("today-section");
+  const dueCard = today
+    .getByTestId("today-reminder-card")
+    .filter({ hasText: "Drink water" });
+  await expect(dueCard).toBeVisible();
+  await expect(dueCard).toContainText("Reminder you scheduled for this action.");
+  await dueCard.getByTestId("acknowledge-reminder-button").click();
+  await expect(today.getByTestId("today-reminder-card")).toHaveCount(0);
+  await expect(today.getByTestId("today-reminders-empty")).toBeVisible();
+  await expect(actionCard).toContainText("Status: todo");
+
+  await page.reload();
+  const reloadedToday = page.getByTestId("today-section");
+  await expect(reloadedToday.getByTestId("today-reminders-empty")).toBeVisible();
+  await expect(reloadedToday.getByTestId("today-reminder-card")).toHaveCount(0);
+  const reloadedActionCard = page
+    .getByTestId("action-list")
+    .getByTestId("action-card")
+    .filter({ hasText: "Drink water" });
+  await expect(reloadedActionCard).toContainText("Status: todo");
+  await expect(reloadedActionCard.getByTestId("reminder-form")).toBeVisible();
+  await expect(
+    reloadedActionCard.getByLabel("IANA timezone"),
+  ).toHaveValue("UTC");
+});

@@ -2,11 +2,14 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import {
+  ApiError,
   api,
   type ActionRecommendation,
   type ActionRecommendations,
   type AssistantToday,
+  type DueHealthActionReminder,
   type HealthAction,
+  type HealthActionReminder,
   type HealthMetric,
   type HealthReportDetail,
   type HealthReportSummary,
@@ -85,6 +88,10 @@ export default function Home() {
   const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
   const [symptomLogs, setSymptomLogs] = useState<SymptomLog[]>([]);
   const [healthActions, setHealthActions] = useState<HealthAction[]>([]);
+  const [actionReminders, setActionReminders] = useState<
+    Record<string, HealthActionReminder | null>
+  >({});
+  const [dueReminders, setDueReminders] = useState<DueHealthActionReminder[]>([]);
   const [healthReports, setHealthReports] = useState<HealthReportSummary[]>([]);
   const [selectedReportDetail, setSelectedReportDetail] =
     useState<HealthReportDetail | null>(null);
@@ -96,8 +103,28 @@ export default function Home() {
   const [assistantToday, setAssistantToday] = useState<AssistantToday | null>(
     null,
   );
+  const [browserTimeZone, setBrowserTimeZone] = useState("UTC");
   const [heightSaving, setHeightSaving] = useState(false);
   const [error, setError] = useState("");
+
+  async function loadActionReminders(
+    personId: string,
+    actions: HealthAction[],
+  ): Promise<Record<string, HealthActionReminder | null>> {
+    const entries = await Promise.all(
+      actions.map(async (action) => {
+        try {
+          return [action.id, await api.healthActionReminder(personId, action.id)] as const;
+        } catch (reason) {
+          if (reason instanceof ApiError && reason.status === 404) {
+            return [action.id, null] as const;
+          }
+          throw reason;
+        }
+      }),
+    );
+    return Object.fromEntries(entries);
+  }
 
   async function refresh() {
     try {
@@ -116,6 +143,8 @@ export default function Home() {
       setHealthScore(null);
       setSymptomLogs([]);
       setHealthActions([]);
+      setActionReminders({});
+      setDueReminders([]);
       setHealthReports([]);
       setSelectedReportDetail(null);
       setRiskAlerts(null);
@@ -135,6 +164,10 @@ export default function Home() {
         setSession(null);
         setPersons([]);
       });
+  }, []);
+
+  useEffect(() => {
+    setBrowserTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   }, []);
 
   const selectedPerson =
@@ -157,9 +190,9 @@ export default function Home() {
       api.assistantToday(effectiveSelectedPersonId),
       api.riskAlerts(effectiveSelectedPersonId),
       api.actionRecommendations(effectiveSelectedPersonId),
+      api.dueHealthActionReminders(effectiveSelectedPersonId),
     ])
-      .then(
-        ([
+      .then(async ([
           metricRows,
           score,
           symptomRows,
@@ -168,7 +201,12 @@ export default function Home() {
           today,
           alerts,
           recommendations,
+          due,
         ]) => {
+          const reminderEntries = await loadActionReminders(
+            effectiveSelectedPersonId,
+            actionRows,
+          );
           if (!cancelled) {
             setMetrics(metricRows);
             setHealthScore(score);
@@ -178,16 +216,19 @@ export default function Home() {
             setAssistantToday(today);
             setRiskAlerts(alerts);
             setActionRecommendations(recommendations);
+            setActionReminders(reminderEntries);
+            setDueReminders(due);
             setAcceptingRecommendationKeys([]);
           }
-        },
-      )
+        })
       .catch(() => {
         if (!cancelled) {
           setMetrics([]);
           setHealthScore(null);
           setSymptomLogs([]);
           setHealthActions([]);
+          setActionReminders({});
+          setDueReminders([]);
           setHealthReports([]);
           setSelectedReportDetail(null);
           setAssistantToday(null);
@@ -247,6 +288,20 @@ export default function Home() {
     }
   }
 
+  async function refreshDueReminders() {
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      setDueReminders(await api.dueHealthActionReminders(personId));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Could not refresh reminders",
+      );
+    }
+  }
+
   async function refreshRiskSignals() {
     const personId = selectedPerson?.id;
     if (!personId) {
@@ -269,7 +324,11 @@ export default function Home() {
   }
 
   async function refreshToday() {
-    await Promise.all([refreshAssistantToday(), refreshRiskSignals()]);
+    await Promise.all([
+      refreshAssistantToday(),
+      refreshRiskSignals(),
+      refreshDueReminders(),
+    ]);
   }
 
   async function refreshHealthScore() {
@@ -349,6 +408,8 @@ export default function Home() {
       setHealthScore(null);
       setSymptomLogs([]);
       setHealthActions([]);
+      setActionReminders({});
+      setDueReminders([]);
       setHealthReports([]);
       setSelectedReportDetail(null);
       setRiskAlerts(null);
@@ -459,8 +520,10 @@ export default function Home() {
         due_at: dueAtLocal ? new Date(dueAtLocal).toISOString() : null,
       });
       formElement.reset();
-      setHealthActions(await api.healthActions(personId));
-      await refreshAssistantToday();
+      const actions = await api.healthActions(personId);
+      setHealthActions(actions);
+      setActionReminders(await loadActionReminders(personId, actions));
+      await Promise.all([refreshAssistantToday(), refreshDueReminders()]);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Action creation failed",
@@ -476,12 +539,102 @@ export default function Home() {
     }
     try {
       await api.completeHealthAction(personId, actionId);
-      setHealthActions(await api.healthActions(personId));
-      await refreshAssistantToday();
+      const actions = await api.healthActions(personId);
+      setHealthActions(actions);
+      setActionReminders(await loadActionReminders(personId, actions));
+      await Promise.all([refreshAssistantToday(), refreshDueReminders()]);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Action completion failed",
       );
+    }
+  }
+
+  async function saveHealthActionReminder(
+    event: FormEvent<HTMLFormElement>,
+    actionId: string,
+  ) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    try {
+      const reminder = await api.upsertHealthActionReminder(personId, actionId, {
+        timezone_name: String(form.get("timezone_name") ?? "").trim(),
+        local_time: String(form.get("local_time") ?? ""),
+      });
+      setActionReminders((current) => ({ ...current, [actionId]: reminder }));
+      await refreshDueReminders();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Reminder schedule failed",
+      );
+    }
+  }
+
+  async function removeHealthActionReminder(actionId: string) {
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      await api.deleteHealthActionReminder(personId, actionId);
+      setActionReminders((current) => ({ ...current, [actionId]: null }));
+      await refreshDueReminders();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Reminder removal failed",
+      );
+    }
+  }
+
+  async function acknowledgeReminder(actionId: string) {
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      const reminder = await api.acknowledgeHealthActionReminder(personId, actionId);
+      setActionReminders((current) => ({ ...current, [actionId]: reminder }));
+      await refreshDueReminders();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Reminder acknowledgement failed",
+      );
+    }
+  }
+
+  async function snoozeReminder(
+    event: FormEvent<HTMLFormElement>,
+    actionId: string,
+  ) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const untilLocal = String(form.get("snooze_until") ?? "");
+    if (!untilLocal) {
+      setError("Choose a future time to snooze this reminder.");
+      return;
+    }
+    try {
+      const reminder = await api.snoozeHealthActionReminder(
+        personId,
+        actionId,
+        new Date(untilLocal).toISOString(),
+      );
+      setActionReminders((current) => ({ ...current, [actionId]: reminder }));
+      await refreshDueReminders();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Reminder snooze failed");
     }
   }
 
@@ -514,6 +667,7 @@ export default function Home() {
       ]);
       setHealthActions(actions);
       setAssistantToday(today);
+      setActionReminders(await loadActionReminders(personId, actions));
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Could not add recommendation to actions",
@@ -712,6 +866,8 @@ export default function Home() {
                     if (person.id !== effectiveSelectedPersonId) {
                       setRiskAlerts(null);
                       setActionRecommendations(null);
+                      setActionReminders({});
+                      setDueReminders([]);
                     }
                   }}
                   role="button"
@@ -919,6 +1075,48 @@ export default function Home() {
                       <span>
                         Completed {new Date(action.completed_at).toLocaleString()}
                       </span>
+                    ) : null}
+                    {action.status === "todo" ? (
+                      <form
+                        key={`${action.id}-${actionReminders[action.id]?.id ?? "none"}-${actionReminders[action.id]?.timezone_name ?? browserTimeZone}-${actionReminders[action.id]?.local_time ?? ""}`}
+                        onSubmit={(event) => saveHealthActionReminder(event, action.id)}
+                        data-testid="reminder-form"
+                      >
+                        <strong>Daily in-app reminder</strong>
+                        <label>
+                          Local reminder time
+                          <input
+                            name="local_time"
+                            type="time"
+                            step={60}
+                            defaultValue={actionReminders[action.id]?.local_time.slice(0, 5) ?? "09:00"}
+                            required
+                          />
+                        </label>
+                        <label>
+                          IANA timezone
+                          <input
+                            name="timezone_name"
+                            defaultValue={
+                              actionReminders[action.id]?.timezone_name ?? browserTimeZone
+                            }
+                            maxLength={128}
+                            required
+                          />
+                        </label>
+                        <button type="submit">Save reminder</button>
+                        {actionReminders[action.id] ? (
+                          <button
+                            className="secondary"
+                            type="button"
+                            onClick={() => removeHealthActionReminder(action.id)}
+                          >
+                            Remove reminder
+                          </button>
+                        ) : null}
+                      </form>
+                    ) : actionReminders[action.id] ? (
+                      <p>Reminder you scheduled for this action is preserved while it is completed.</p>
                     ) : null}
                     <button
                       className="secondary"
@@ -1295,6 +1493,44 @@ export default function Home() {
                     </span>{" "}
                     days
                   </p>
+
+                  <h3>Reminders due</h3>
+                  {dueReminders.length === 0 ? (
+                    <p data-testid="today-reminders-empty">No reminders are due.</p>
+                  ) : (
+                    <ul data-testid="today-reminder-list">
+                      {dueReminders.map((reminder) => (
+                        <li
+                          key={reminder.reminder_id}
+                          data-testid="today-reminder-card"
+                          data-reminder-action-id={reminder.action_id}
+                        >
+                          <strong>{reminder.action_title}</strong>
+                          <p>Reminder you scheduled for this action.</p>
+                          <span>
+                            Every day at {reminder.local_time.slice(0, 5)} · {reminder.timezone_name}
+                          </span>
+                          <button
+                            type="button"
+                            data-testid="acknowledge-reminder-button"
+                            onClick={() => acknowledgeReminder(reminder.action_id)}
+                          >
+                            Done for today
+                          </button>
+                          <form
+                            onSubmit={(event) => snoozeReminder(event, reminder.action_id)}
+                            data-testid="snooze-reminder-form"
+                          >
+                            <label>
+                              Snooze until
+                              <input name="snooze_until" type="datetime-local" required />
+                            </label>
+                            <button type="submit">Snooze reminder</button>
+                          </form>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
                   <h3>Latest metric</h3>
                   {assistantToday.latest_metric ? (

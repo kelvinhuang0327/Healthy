@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -19,12 +19,14 @@ from healthy.domain import assistant as assistant_domain
 from healthy.domain import health_score as health_score_domain
 from healthy.domain import insights as insights_domain
 from healthy.domain import outcomes as outcomes_domain
+from healthy.domain import reminders as reminders_domain
 from healthy.domain import reports as reports_domain
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
 from healthy.infrastructure.models import (
     Account,
     HealthAction,
     HealthActionOutcome,
+    HealthActionReminder,
     HealthMetric,
     HealthReportModel,
     HealthReportObservationModel,
@@ -34,6 +36,7 @@ from healthy.infrastructure.models import (
 )
 from healthy.infrastructure.repositories import (
     HealthActionOutcomeRepository,
+    HealthActionReminderRepository,
     HealthActionRepository,
     HealthMetricRepository,
     HealthReportRepository,
@@ -80,6 +83,22 @@ class HealthActionOutcomeInvalidStateError(Exception):
     pass
 
 
+class HealthActionReminderIntegrityError(Exception):
+    pass
+
+
+class HealthActionReminderInvalidStateError(Exception):
+    pass
+
+
+class HealthActionReminderValidationError(Exception):
+    pass
+
+
+class HealthActionReminderSnoozeError(Exception):
+    pass
+
+
 class HealthReportIntegrityError(Exception):
     pass
 
@@ -115,6 +134,13 @@ class AssistantToday:
 class ActionRecommendationAcceptanceResult:
     action: HealthAction
     created: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DueHealthActionReminder:
+    reminder: HealthActionReminder
+    action: HealthAction
+    local_date: date
 
 
 def _session_record(account_id: uuid.UUID, max_age_seconds: int) -> tuple[SessionRecord, str]:
@@ -617,6 +643,181 @@ def get_health_action(
     if person is None:
         return None
     return HealthActionRepository.get_for_person(database_session, person.id, action_id)
+
+
+def get_health_action_reminder(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+) -> HealthActionReminder | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    return HealthActionReminderRepository.get_for_action(database_session, action.id)
+
+
+def upsert_health_action_reminder(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    timezone_name: str,
+    local_time: time,
+    now: datetime | None = None,
+) -> HealthActionReminder | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    if action.status != actions_domain.HealthActionStatus.TODO:
+        raise HealthActionReminderInvalidStateError
+    try:
+        normalized_timezone = reminders_domain.validate_timezone(timezone_name)
+        normalized_local_time = reminders_domain.normalize_local_time(local_time)
+    except ValueError as error:
+        raise HealthActionReminderValidationError from error
+    updated_at = reminders_domain.normalize_instant(now or datetime.now(UTC))
+    try:
+        reminder = HealthActionReminderRepository.upsert_for_action(
+            database_session,
+            action.id,
+            timezone_name=normalized_timezone,
+            local_time=normalized_local_time,
+            updated_at=updated_at,
+        )
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise HealthActionReminderIntegrityError from error
+    return reminder
+
+
+def delete_health_action_reminder(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+) -> bool | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    deleted = HealthActionReminderRepository.delete_for_action(database_session, action.id)
+    database_session.commit()
+    return deleted
+
+
+def list_due_health_action_reminders(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    now: datetime,
+) -> list[DueHealthActionReminder] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    due_reminders: list[DueHealthActionReminder] = []
+    for reminder, action in HealthActionReminderRepository.list_for_person(
+        database_session,
+        person.id,
+    ):
+        due_state = reminders_domain.evaluate_due(
+            action_status=action.status,
+            timezone_name=reminder.timezone_name,
+            local_time=reminder.local_time,
+            now=now,
+            snoozed_until=reminder.snoozed_until,
+            last_acknowledged_local_date=reminder.last_acknowledged_local_date,
+        )
+        if due_state.is_due:
+            due_reminders.append(
+                DueHealthActionReminder(
+                    reminder=reminder,
+                    action=action,
+                    local_date=due_state.local_date,
+                )
+            )
+    return due_reminders
+
+
+def acknowledge_health_action_reminder(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    now: datetime | None = None,
+) -> HealthActionReminder | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    reminder = HealthActionReminderRepository.get_for_action(database_session, action.id)
+    if reminder is None:
+        return None
+    acknowledged_at = reminders_domain.normalize_instant(now or datetime.now(UTC))
+    local_date = reminders_domain.local_date_for(acknowledged_at, reminder.timezone_name)
+    try:
+        acknowledged = HealthActionReminderRepository.acknowledge_for_action(
+            database_session,
+            action.id,
+            local_date=local_date,
+            updated_at=acknowledged_at,
+        )
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise HealthActionReminderIntegrityError from error
+    return acknowledged
+
+
+def snooze_health_action_reminder(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    until: datetime,
+    now: datetime | None = None,
+) -> HealthActionReminder | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    if HealthActionReminderRepository.get_for_action(database_session, action.id) is None:
+        return None
+    snoozed_at = reminders_domain.normalize_instant(now or datetime.now(UTC))
+    normalized_until = reminders_domain.normalize_instant(until)
+    if normalized_until <= snoozed_at:
+        raise HealthActionReminderSnoozeError
+    try:
+        reminder = HealthActionReminderRepository.set_snoozed_until(
+            database_session,
+            action.id,
+            snoozed_until=normalized_until,
+            updated_at=snoozed_at,
+        )
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise HealthActionReminderIntegrityError from error
+    return reminder
 
 
 def complete_health_action(

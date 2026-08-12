@@ -342,6 +342,78 @@
         "title": "DailyAttentionItemSummary",
         "type": "object"
       },
+      "DueHealthActionReminderSummary": {
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "action_origin_type": {
+            "$ref": "#/components/schemas/HealthActionOriginType"
+          },
+          "action_title": {
+            "title": "Action Title",
+            "type": "string"
+          },
+          "last_acknowledged_local_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Acknowledged Local Date"
+          },
+          "local_date": {
+            "format": "date",
+            "title": "Local Date",
+            "type": "string"
+          },
+          "local_time": {
+            "format": "time",
+            "title": "Local Time",
+            "type": "string"
+          },
+          "reminder_id": {
+            "format": "uuid",
+            "title": "Reminder Id",
+            "type": "string"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "timezone_name": {
+            "title": "Timezone Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reminder_id",
+          "action_id",
+          "action_title",
+          "action_origin_type",
+          "timezone_name",
+          "local_time",
+          "local_date",
+          "snoozed_until",
+          "last_acknowledged_local_date"
+        ],
+        "title": "DueHealthActionReminderSummary",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -460,6 +532,112 @@
           "created_at"
         ],
         "title": "HealthActionOutcomeSummary",
+        "type": "object"
+      },
+      "HealthActionReminderSnooze": {
+        "additionalProperties": false,
+        "properties": {
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "until"
+        ],
+        "title": "HealthActionReminderSnooze",
+        "type": "object"
+      },
+      "HealthActionReminderSummary": {
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_acknowledged_local_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Acknowledged Local Date"
+          },
+          "local_time": {
+            "format": "time",
+            "title": "Local Time",
+            "type": "string"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "timezone_name": {
+            "title": "Timezone Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action_id",
+          "timezone_name",
+          "local_time",
+          "snoozed_until",
+          "last_acknowledged_local_date",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "HealthActionReminderSummary",
+        "type": "object"
+      },
+      "HealthActionReminderUpsert": {
+        "additionalProperties": false,
+        "properties": {
+          "local_time": {
+            "format": "time",
+            "title": "Local Time",
+            "type": "string"
+          },
+          "timezone_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timezone_name",
+          "local_time"
+        ],
+        "title": "HealthActionReminderUpsert",
         "type": "object"
       },
       "HealthActionStatus": {
@@ -2963,6 +3141,418 @@
         "summary": "Get Health Action Outcome"
       }
     },
+    "/v1/persons/{person_id}/actions/{action_id}/reminder": {
+      "delete": {
+        "operationId": "delete_health_action_reminder_v1_persons__person_id__actions__action_id__reminder_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthy_csrf",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthy Csrf"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Delete Health Action Reminder"
+      },
+      "get": {
+        "operationId": "get_health_action_reminder_v1_persons__person_id__actions__action_id__reminder_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthActionReminderSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Health Action Reminder"
+      },
+      "put": {
+        "operationId": "put_health_action_reminder_v1_persons__person_id__actions__action_id__reminder_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthy_csrf",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthy Csrf"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthActionReminderUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthActionReminderSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Put Health Action Reminder"
+      }
+    },
+    "/v1/persons/{person_id}/actions/{action_id}/reminder/acknowledge": {
+      "post": {
+        "operationId": "acknowledge_health_action_reminder_v1_persons__person_id__actions__action_id__reminder_acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthy_csrf",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthy Csrf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthActionReminderSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Acknowledge Health Action Reminder"
+      }
+    },
+    "/v1/persons/{person_id}/actions/{action_id}/reminder/snooze": {
+      "post": {
+        "operationId": "snooze_health_action_reminder_v1_persons__person_id__actions__action_id__reminder_snooze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthy_csrf",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthy Csrf"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthActionReminderSnooze"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthActionReminderSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Snooze Health Action Reminder"
+      }
+    },
     "/v1/persons/{person_id}/analytics": {
       "get": {
         "operationId": "get_health_analytics_v1_persons__person_id__analytics_get",
@@ -3433,6 +4023,55 @@
           }
         ],
         "summary": "Patch Person Profile"
+      }
+    },
+    "/v1/persons/{person_id}/reminders/due": {
+      "get": {
+        "operationId": "get_due_health_action_reminders_v1_persons__person_id__reminders_due_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DueHealthActionReminderSummary"
+                  },
+                  "title": "Response Get Due Health Action Reminders V1 Persons  Person Id  Reminders Due Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Get Due Health Action Reminders"
       }
     },
     "/v1/persons/{person_id}/reports": {

@@ -30,9 +30,13 @@ from healthy.presentation.schemas import (
     ActionRecommendationSummary,
     AssistantTodaySummary,
     DailyAttentionItemSummary,
+    DueHealthActionReminderSummary,
     HealthActionCreate,
     HealthActionOutcomeCreate,
     HealthActionOutcomeSummary,
+    HealthActionReminderSnooze,
+    HealthActionReminderSummary,
+    HealthActionReminderUpsert,
     HealthActionSummary,
     HealthAnalyticsMetricSummary,
     HealthAnalyticsSummary,
@@ -708,6 +712,205 @@ def complete_health_action(
             detail="Action not found",
         )
     return HealthActionSummary.model_validate(action)
+
+
+@router.put(
+    "/persons/{person_id}/actions/{action_id}/reminder",
+    response_model=HealthActionReminderSummary,
+)
+def put_health_action_reminder(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    payload: HealthActionReminderUpsert,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthActionReminderSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    try:
+        reminder = services.upsert_health_action_reminder(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            action_id=action_id,
+            timezone_name=payload.timezone_name,
+            local_time=payload.local_time,
+        )
+    except services.HealthActionReminderInvalidStateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Reminder schedules require an open action",
+        ) from error
+    except (
+        services.HealthActionReminderIntegrityError,
+        services.HealthActionReminderValidationError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid reminder request",
+        ) from error
+    if reminder is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found",
+        )
+    return HealthActionReminderSummary.model_validate(reminder)
+
+
+@router.get(
+    "/persons/{person_id}/actions/{action_id}/reminder",
+    response_model=HealthActionReminderSummary,
+)
+def get_health_action_reminder(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthActionReminderSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    action = services.get_health_action(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        action_id=action_id,
+    )
+    if action is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found",
+        )
+    reminder = services.get_health_action_reminder(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        action_id=action.id,
+    )
+    if reminder is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reminder not found",
+        )
+    return HealthActionReminderSummary.model_validate(reminder)
+
+
+@router.delete(
+    "/persons/{person_id}/actions/{action_id}/reminder",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+)
+def delete_health_action_reminder(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> None:
+    _get_owned_person(person_id, authenticated, database_session)
+    deleted = services.delete_health_action_reminder(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        action_id=action_id,
+    )
+    if deleted is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found",
+        )
+
+
+@router.post(
+    "/persons/{person_id}/actions/{action_id}/reminder/acknowledge",
+    response_model=HealthActionReminderSummary,
+)
+def acknowledge_health_action_reminder(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthActionReminderSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    reminder = services.acknowledge_health_action_reminder(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        action_id=action_id,
+        now=datetime.now(UTC),
+    )
+    if reminder is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reminder not found",
+        )
+    return HealthActionReminderSummary.model_validate(reminder)
+
+
+@router.post(
+    "/persons/{person_id}/actions/{action_id}/reminder/snooze",
+    response_model=HealthActionReminderSummary,
+)
+def snooze_health_action_reminder(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    payload: HealthActionReminderSnooze,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthActionReminderSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    try:
+        reminder = services.snooze_health_action_reminder(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            action_id=action_id,
+            until=payload.until,
+            now=datetime.now(UTC),
+        )
+    except services.HealthActionReminderSnoozeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Snooze time must be in the future",
+        ) from error
+    if reminder is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reminder not found",
+        )
+    return HealthActionReminderSummary.model_validate(reminder)
+
+
+@router.get(
+    "/persons/{person_id}/reminders/due",
+    response_model=list[DueHealthActionReminderSummary],
+)
+def get_due_health_action_reminders(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> list[DueHealthActionReminderSummary]:
+    due_reminders = services.list_due_health_action_reminders(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        now=datetime.now(UTC),
+    )
+    if due_reminders is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return [
+        DueHealthActionReminderSummary(
+            reminder_id=item.reminder.id,
+            action_id=item.action.id,
+            action_title=item.action.title,
+            action_origin_type=item.action.origin_type,
+            timezone_name=item.reminder.timezone_name,
+            local_time=item.reminder.local_time,
+            local_date=item.local_date,
+            snoozed_until=item.reminder.snoozed_until,
+            last_acknowledged_local_date=item.reminder.last_acknowledged_local_date,
+        )
+        for item in due_reminders
+    ]
 
 
 @router.post(

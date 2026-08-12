@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -15,6 +15,8 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Time,
+    UniqueConstraint,
     func,
     text,
 )
@@ -25,6 +27,7 @@ from sqlalchemy.orm import relationship as orm_relationship
 from healthy.domain import actions as actions_domain
 from healthy.domain import metrics as metrics_domain
 from healthy.domain import outcomes as outcomes_domain
+from healthy.domain import reminders as reminders_domain
 from healthy.domain import symptoms as symptoms_domain
 from healthy.infrastructure.database import Base
 
@@ -400,6 +403,51 @@ class HealthAction(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    reminder: Mapped[HealthActionReminder | None] = orm_relationship(
+        back_populates="action",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+
+
+class HealthActionReminder(Base):
+    __tablename__ = "health_action_reminders"
+    __table_args__ = (
+        UniqueConstraint(
+            "action_id",
+            name="uq_health_action_reminders_action_id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    action_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("health_actions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    timezone_name: Mapped[str] = mapped_column(
+        String(reminders_domain.MAX_TIMEZONE_NAME_LENGTH),
+        nullable=False,
+    )
+    local_time: Mapped[time] = mapped_column(Time, nullable=False)
+    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_acknowledged_local_date: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    action: Mapped[HealthAction] = orm_relationship(back_populates="reminder")
 
 
 class HealthActionOutcome(Base):

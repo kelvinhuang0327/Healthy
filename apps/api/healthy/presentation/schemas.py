@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -19,6 +19,7 @@ from pydantic import (
 from healthy.domain import actions as actions_domain
 from healthy.domain import metrics as metrics_domain
 from healthy.domain import outcomes as outcomes_domain
+from healthy.domain import reminders as reminders_domain
 from healthy.domain import symptoms as symptoms_domain
 from healthy.domain.identity import PersonRelationship
 
@@ -411,6 +412,70 @@ class HealthActionSummary(BaseModel):
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class HealthActionReminderUpsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timezone_name: str = Field(
+        min_length=1,
+        max_length=reminders_domain.MAX_TIMEZONE_NAME_LENGTH,
+    )
+    local_time: time
+
+    @field_validator("timezone_name")
+    @classmethod
+    def _validate_timezone_name(cls, value: str) -> str:
+        try:
+            return reminders_domain.validate_timezone(value)
+        except ValueError as error:
+            raise ValueError("timezone_name must be a valid IANA timezone") from error
+
+    @field_validator("local_time")
+    @classmethod
+    def _validate_local_time(cls, value: time) -> time:
+        try:
+            return reminders_domain.normalize_local_time(value)
+        except ValueError as error:
+            raise ValueError("local_time must not include a timezone offset") from error
+
+
+class HealthActionReminderSnooze(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    until: datetime
+
+    @field_validator("until")
+    @classmethod
+    def _normalize_until(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("until must include timezone information")
+        return value.astimezone(UTC)
+
+
+class HealthActionReminderSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    action_id: uuid.UUID
+    timezone_name: str
+    local_time: time
+    snoozed_until: datetime | None
+    last_acknowledged_local_date: date | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DueHealthActionReminderSummary(BaseModel):
+    reminder_id: uuid.UUID
+    action_id: uuid.UUID
+    action_title: str
+    action_origin_type: actions_domain.HealthActionOriginType
+    timezone_name: str
+    local_time: time
+    local_date: date
+    snoozed_until: datetime | None
+    last_acknowledged_local_date: date | None
 
 
 class ActionRecommendationAcceptanceSummary(BaseModel):

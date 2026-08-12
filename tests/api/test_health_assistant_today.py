@@ -243,13 +243,14 @@ def test_ordering_is_deterministic_and_newest_first(client: TestClient) -> None:
     first_id = uuid.UUID(first.json()["id"])
     second_id = uuid.UUID(second.json()["id"])
     third_id = uuid.UUID(third.json()["id"])
+    anchor = datetime.now(UTC) - timedelta(days=1)
 
     database = Database(DATABASE_URL)
     with Session(database.engine) as database_session:
         for symptom_id, occurred_at in (
-            (first_id, datetime(2026, 7, 29, 12, 0, tzinfo=UTC)),
-            (second_id, datetime(2026, 7, 29, 13, 0, tzinfo=UTC)),
-            (third_id, datetime(2026, 7, 29, 13, 0, tzinfo=UTC)),
+            (first_id, anchor),
+            (second_id, anchor + timedelta(hours=1)),
+            (third_id, anchor + timedelta(hours=1)),
         ):
             row = database_session.get(SymptomLog, symptom_id)
             assert row is not None

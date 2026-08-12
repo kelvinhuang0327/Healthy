@@ -200,6 +200,23 @@ class HealthMetricSummary(BaseModel):
     created_at: datetime
 
 
+class HealthAnalyticsMetricSummary(BaseModel):
+    metric: str
+    label: str
+    unit: str
+    points: int
+    first_value: float | None
+    last_value: float | None
+    change_percent: float | None
+    slope_per_day: float | None
+    direction: Literal["up", "down", "stable", "no_data"]
+
+
+class HealthAnalyticsSummary(BaseModel):
+    period_days: int
+    summaries: list[HealthAnalyticsMetricSummary]
+
+
 class HealthScoreComponentSummary(BaseModel):
     kind: Literal["cardiovascular", "metabolic", "activity", "weight", "overall"]
     label: str

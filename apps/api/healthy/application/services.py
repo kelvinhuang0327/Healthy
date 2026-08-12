@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from healthy.application import health_score_inputs
+from healthy.application.analytics import HealthAnalytics, build_health_analytics
 from healthy.application.history import HistoryItem, build_history
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
@@ -743,6 +744,26 @@ def get_health_history(
             person.id,
         ),
     )
+
+
+def get_health_analytics(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    now: datetime,
+    period_days: int = 90,
+) -> HealthAnalytics | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    since = now - timedelta(days=period_days)
+    metrics = [
+        metric
+        for metric in HealthMetricRepository.list_for_person(database_session, person.id)
+        if metric.recorded_at >= since
+    ]
+    return build_health_analytics(metrics, period_days=period_days)
 
 
 def get_health_score_inputs(

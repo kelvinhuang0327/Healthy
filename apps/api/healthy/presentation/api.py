@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from healthy.application import services
@@ -30,6 +30,8 @@ from healthy.presentation.schemas import (
     HealthActionOutcomeCreate,
     HealthActionOutcomeSummary,
     HealthActionSummary,
+    HealthAnalyticsMetricSummary,
+    HealthAnalyticsSummary,
     HealthHistoryItemSummary,
     HealthMetricCreate,
     HealthMetricSummary,
@@ -777,6 +779,47 @@ def get_health_history(
         )
         for item in history
     ]
+
+
+@router.get(
+    "/persons/{person_id}/analytics",
+    response_model=HealthAnalyticsSummary,
+)
+def get_health_analytics(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+    days: Annotated[int, Query(ge=7, le=365)] = 90,
+) -> HealthAnalyticsSummary:
+    result = services.get_health_analytics(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        now=datetime.now(UTC),
+        period_days=days,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return HealthAnalyticsSummary(
+        period_days=result.period_days,
+        summaries=[
+            HealthAnalyticsMetricSummary(
+                metric=summary.metric,
+                label=summary.label,
+                unit=summary.unit,
+                points=summary.points,
+                first_value=summary.first_value,
+                last_value=summary.last_value,
+                change_percent=summary.change_percent,
+                slope_per_day=summary.slope_per_day,
+                direction=summary.direction,
+            )
+            for summary in result.summaries
+        ],
+    )
 
 
 @router.post(

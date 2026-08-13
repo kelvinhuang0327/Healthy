@@ -19,6 +19,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/sessions/current",
         "/v1/session",
         "/v1/persons",
+        "/v1/notification-capabilities",
         "/v1/persons/{person_id}",
         "/v1/persons/{person_id}/profile",
         "/v1/persons/{person_id}/metrics",
@@ -33,6 +34,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/persons/{person_id}/actions/{action_id}",
         "/v1/persons/{person_id}/actions/{action_id}/complete",
         "/v1/persons/{person_id}/actions/{action_id}/reminder",
+        "/v1/persons/{person_id}/actions/{action_id}/reminder/channels/email",
         "/v1/persons/{person_id}/actions/{action_id}/reminder/acknowledge",
         "/v1/persons/{person_id}/actions/{action_id}/reminder/snooze",
         "/v1/persons/{person_id}/actions/{action_id}/outcomes",
@@ -57,6 +59,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("DELETE", "/v1/sessions/current"),
         ("GET", "/v1/session"),
         ("GET", "/v1/persons"),
+        ("GET", "/v1/notification-capabilities"),
         ("POST", "/v1/persons"),
         ("GET", "/v1/persons/{person_id}"),
         ("PATCH", "/v1/persons/{person_id}/profile"),
@@ -80,6 +83,10 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("PUT", "/v1/persons/{person_id}/actions/{action_id}/reminder"),
         ("GET", "/v1/persons/{person_id}/actions/{action_id}/reminder"),
         ("DELETE", "/v1/persons/{person_id}/actions/{action_id}/reminder"),
+        (
+            "PUT",
+            "/v1/persons/{person_id}/actions/{action_id}/reminder/channels/email",
+        ),
         ("POST", "/v1/persons/{person_id}/actions/{action_id}/reminder/acknowledge"),
         ("POST", "/v1/persons/{person_id}/actions/{action_id}/reminder/snooze"),
         ("POST", "/v1/persons/{person_id}/actions/{action_id}/outcomes"),
@@ -250,6 +257,7 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "action_id",
         "timezone_name",
         "local_time",
+        "email_enabled",
         "snoozed_until",
         "last_acknowledged_local_date",
         "created_at",
@@ -267,6 +275,39 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         foreign_key["options"].get("ondelete")
         for foreign_key in health_action_reminder_foreign_keys
     } == {"CASCADE"}
+    assert set(inspector.get_table_names()) >= {"notification_deliveries"}
+    notification_columns = {
+        column["name"] for column in inspector.get_columns("notification_deliveries")
+    }
+    assert notification_columns == {
+        "id",
+        "reminder_id",
+        "channel",
+        "reminder_local_date",
+        "status",
+        "attempt_count",
+        "claimed_at",
+        "sent_at",
+        "failed_at",
+        "failure_code",
+        "created_at",
+        "updated_at",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("notification_deliveries")
+    } >= {"uq_notification_deliveries_reminder_channel_local_date"}
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("notification_deliveries")
+    } >= {
+        "ck_notification_deliveries_channel_allowed",
+        "ck_notification_deliveries_status_allowed",
+        "ck_notification_deliveries_attempt_count_nonnegative",
+        "ck_notification_deliveries_sent_requires_sent_at",
+        "ck_notification_deliveries_failed_requires_failed_at",
+        "ck_notification_deliveries_sending_requires_claimed_at",
+    }
 
 
 def test_runtime_never_auto_creates_schema() -> None:

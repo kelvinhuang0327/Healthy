@@ -19,6 +19,7 @@ import {
   type RiskAlerts,
   type SessionSummary,
   type SymptomLog,
+  type NotificationCapabilities,
 } from "../lib/api";
 
 function compareRiskAlerts(left: RiskAlert, right: RiskAlert): number {
@@ -92,6 +93,8 @@ export default function Home() {
     Record<string, HealthActionReminder | null>
   >({});
   const [dueReminders, setDueReminders] = useState<DueHealthActionReminder[]>([]);
+  const [notificationCapabilities, setNotificationCapabilities] =
+    useState<NotificationCapabilities | null>(null);
   const [healthReports, setHealthReports] = useState<HealthReportSummary[]>([]);
   const [selectedReportDetail, setSelectedReportDetail] =
     useState<HealthReportDetail | null>(null);
@@ -134,8 +137,10 @@ export default function Home() {
         api.session(),
         api.persons(),
       ]);
+      const capabilities = await api.notificationCapabilities();
       setSession(current);
       setPersons(rows);
+      setNotificationCapabilities(capabilities);
       setError("");
     } catch {
       setSession(null);
@@ -147,6 +152,7 @@ export default function Home() {
       setHealthActions([]);
       setActionReminders({});
       setDueReminders([]);
+      setNotificationCapabilities(null);
       setHealthReports([]);
       setSelectedReportDetail(null);
       setRiskAlerts(null);
@@ -157,14 +163,16 @@ export default function Home() {
   }
 
   useEffect(() => {
-    Promise.all([api.session(), api.persons()])
-      .then(([current, rows]) => {
+    Promise.all([api.session(), api.persons(), api.notificationCapabilities()])
+      .then(([current, rows, capabilities]) => {
         setSession(current);
         setPersons(rows);
+        setNotificationCapabilities(capabilities);
       })
       .catch(() => {
         setSession(null);
         setPersons([]);
+        setNotificationCapabilities(null);
       });
   }, []);
 
@@ -227,6 +235,7 @@ export default function Home() {
           setHealthActions([]);
           setActionReminders({});
           setDueReminders([]);
+          setNotificationCapabilities(null);
           setHealthReports([]);
           setSelectedReportDetail(null);
           setAssistantToday(null);
@@ -408,6 +417,7 @@ export default function Home() {
       setHealthActions([]);
       setActionReminders({});
       setDueReminders([]);
+      setNotificationCapabilities(null);
       setHealthReports([]);
       setSelectedReportDetail(null);
       setRiskAlerts(null);
@@ -586,6 +596,26 @@ export default function Home() {
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Reminder removal failed",
+      );
+    }
+  }
+
+  async function setEmailNotification(actionId: string, enabled: boolean) {
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    try {
+      const reminder = await api.setHealthActionEmailNotification(
+        personId,
+        actionId,
+        enabled,
+      );
+      setActionReminders((current) => ({ ...current, [actionId]: reminder }));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Email reminder update failed",
       );
     }
   }
@@ -1104,13 +1134,30 @@ export default function Home() {
                         </label>
                         <button type="submit">Save reminder</button>
                         {actionReminders[action.id] ? (
-                          <button
-                            className="secondary"
-                            type="button"
-                            onClick={() => removeHealthActionReminder(action.id)}
-                          >
-                            Remove reminder
-                          </button>
+                          <>
+                            <label>
+                              <input
+                                type="checkbox"
+                                checked={actionReminders[action.id]?.email_enabled ?? false}
+                                disabled={!notificationCapabilities?.email_available}
+                                onChange={(event) =>
+                                  setEmailNotification(action.id, event.target.checked)
+                                }
+                              />
+                              Email me a generic reminder
+                            </label>
+                            <p>
+                              Email reminders are a convenience notification. Uses your
+                              account email; messages do not include health details.
+                            </p>
+                            <button
+                              className="secondary"
+                              type="button"
+                              onClick={() => removeHealthActionReminder(action.id)}
+                            >
+                              Remove reminder
+                            </button>
+                          </>
                         ) : null}
                       </form>
                     ) : actionReminders[action.id] ? (

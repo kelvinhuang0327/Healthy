@@ -22,6 +22,7 @@ from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reminders as reminders_domain
 from healthy.domain import reports as reports_domain
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
+from healthy.infrastructure.config import Settings
 from healthy.infrastructure.models import (
     Account,
     HealthAction,
@@ -96,6 +97,14 @@ class HealthActionReminderValidationError(Exception):
 
 
 class HealthActionReminderSnoozeError(Exception):
+    pass
+
+
+class NotificationDeliveryCapabilityUnavailableError(Exception):
+    pass
+
+
+class NotificationPreferenceInvalidStateError(Exception):
     pass
 
 
@@ -659,6 +668,47 @@ def get_health_action_reminder(
     if action is None:
         return None
     return HealthActionReminderRepository.get_for_action(database_session, action.id)
+
+
+def set_health_action_email_notification(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    enabled: bool,
+    email_capability_available: bool,
+    now: datetime | None = None,
+) -> HealthActionReminder | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    reminder = HealthActionReminderRepository.get_for_action(database_session, action.id)
+    if reminder is None:
+        return None
+    if enabled:
+        if action.status != actions_domain.HealthActionStatus.TODO:
+            raise NotificationPreferenceInvalidStateError
+        if not email_capability_available:
+            raise NotificationDeliveryCapabilityUnavailableError
+    if reminder.email_enabled == enabled:
+        return reminder
+    updated_at = reminders_domain.normalize_instant(now or datetime.now(UTC))
+    updated = HealthActionReminderRepository.set_email_enabled(
+        database_session,
+        action.id,
+        email_enabled=enabled,
+        updated_at=updated_at,
+    )
+    database_session.commit()
+    return updated
+
+
+def notification_capability(settings: Settings) -> bool:
+    return settings.email_delivery_available
 
 
 def upsert_health_action_reminder(

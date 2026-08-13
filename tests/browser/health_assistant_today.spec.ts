@@ -333,3 +333,50 @@ test("configured daily reminder is due, acknowledged, and reload-safe", async ({
     reloadedActionCard.getByLabel("IANA timezone"),
   ).toHaveValue("UTC");
 });
+
+test("generic email reminder preference is explicit and reload-safe", async ({
+  page,
+}) => {
+  const marker = Date.now();
+  await register(page, `email-preference-owner-${marker}@example.com`, "Email Preference Owner");
+  await page.getByTestId("person-card").first().click();
+
+  const actionForm = page.getByTestId("action-form");
+  await actionForm.getByLabel("Title").fill("Private reminder action");
+  await actionForm.getByRole("button", { name: "Create action" }).click();
+
+  const actionCard = page
+    .getByTestId("action-list")
+    .getByTestId("action-card")
+    .filter({ hasText: "Private reminder action" });
+  const reminderForm = actionCard.getByTestId("reminder-form");
+  await reminderForm.getByLabel("Local reminder time").fill("00:00");
+  await reminderForm.getByLabel("IANA timezone").fill("UTC");
+  await reminderForm.getByRole("button", { name: "Save reminder" }).click();
+
+  const emailCheckbox = reminderForm.getByLabel("Email me a generic reminder");
+  await expect(emailCheckbox).toBeEnabled();
+  await expect(emailCheckbox).not.toBeChecked();
+  await emailCheckbox.click();
+  await expect(emailCheckbox).toBeChecked();
+
+  await page.reload();
+  const reloadedCard = page
+    .getByTestId("action-list")
+    .getByTestId("action-card")
+    .filter({ hasText: "Private reminder action" });
+  const reloadedCheckbox = reloadedCard
+    .getByTestId("reminder-form")
+    .getByLabel("Email me a generic reminder");
+  await expect(reloadedCheckbox).toBeChecked();
+
+  await reloadedCheckbox.click();
+  await expect(reloadedCheckbox).not.toBeChecked();
+  await page.reload();
+  await expect(
+    page
+      .getByTestId("action-card")
+      .filter({ hasText: "Private reminder action" })
+      .getByLabel("Email me a generic reminder"),
+  ).not.toBeChecked();
+});

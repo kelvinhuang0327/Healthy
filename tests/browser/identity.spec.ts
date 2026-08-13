@@ -123,6 +123,7 @@ test("register, manage Persons, logout, login, and deny foreign Person access", 
   expect(credentialBodies).toEqual([]);
   expect(consoleErrors).toEqual([]);
   expect(expectedHttpFailures.sort()).toEqual([
+    "401 /api/v1/notification-capabilities",
     "401 /api/v1/persons",
     "401 /api/v1/session",
     `404 /api/v1/persons/${foreignPersonId}`,

@@ -40,6 +40,10 @@ export default defineConfig({
         HEALTHY_DATABASE_URL: databaseUrl,
         HEALTHY_COOKIE_SECURE: "false",
         HEALTHY_ALLOWED_ORIGINS: "http://127.0.0.1:3000",
+        HEALTHY_EMAIL_NOTIFICATIONS_ENABLED: "true",
+        HEALTHY_SMTP_HOST: "smtp.invalid",
+        HEALTHY_SMTP_FROM_ADDRESS: "no-reply@healthy.invalid",
+        HEALTHY_SMTP_STARTTLS: "true",
       },
     },
     {

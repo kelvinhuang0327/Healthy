@@ -440,6 +440,12 @@ class HealthActionReminderUpsert(BaseModel):
             raise ValueError("local_time must not include a timezone offset") from error
 
 
+class HealthActionReminderEmailChannelUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
 class HealthActionReminderSnooze(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -460,10 +466,15 @@ class HealthActionReminderSummary(BaseModel):
     action_id: uuid.UUID
     timezone_name: str
     local_time: time
+    email_enabled: bool
     snoozed_until: datetime | None
     last_acknowledged_local_date: date | None
     created_at: datetime
     updated_at: datetime
+
+
+class NotificationCapabilitiesSummary(BaseModel):
+    email_available: bool
 
 
 class DueHealthActionReminderSummary(BaseModel):

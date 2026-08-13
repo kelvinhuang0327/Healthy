@@ -164,10 +164,15 @@ export type HealthActionReminder = {
   action_id: string;
   timezone_name: string;
   local_time: string;
+  email_enabled: boolean;
   snoozed_until: string | null;
   last_acknowledged_local_date: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type NotificationCapabilities = {
+  email_available: boolean;
 };
 
 export type DueHealthActionReminder = {
@@ -361,6 +366,8 @@ export const api = {
     }),
   session: () => request<SessionSummary>("/session"),
   persons: () => request<Person[]>("/persons"),
+  notificationCapabilities: () =>
+    request<NotificationCapabilities>("/notification-capabilities"),
   person: (personId: string) => request<Person>(`/persons/${personId}`),
   updatePersonHeight: (personId: string, heightCm: number | null) =>
     request<Person>(`/persons/${personId}/profile`, {
@@ -470,6 +477,15 @@ export const api = {
     request<HealthActionReminder>(
       `/persons/${personId}/actions/${actionId}/reminder`,
       { method: "PUT", body: JSON.stringify(payload) },
+    ),
+  setHealthActionEmailNotification: (
+    personId: string,
+    actionId: string,
+    enabled: boolean,
+  ) =>
+    request<HealthActionReminder>(
+      `/persons/${personId}/actions/${actionId}/reminder/channels/email`,
+      { method: "PUT", body: JSON.stringify({ enabled }) },
     ),
   deleteHealthActionReminder: (personId: string, actionId: string) =>
     request<void>(

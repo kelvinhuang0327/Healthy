@@ -34,6 +34,7 @@ from healthy.presentation.schemas import (
     HealthActionCreate,
     HealthActionOutcomeCreate,
     HealthActionOutcomeSummary,
+    HealthActionReminderEmailChannelUpdate,
     HealthActionReminderSnooze,
     HealthActionReminderSummary,
     HealthActionReminderUpsert,
@@ -51,6 +52,7 @@ from healthy.presentation.schemas import (
     HistorySourceSummary,
     InsightEvidenceSummary,
     InsightSummary,
+    NotificationCapabilitiesSummary,
     PersonCreate,
     PersonHeightUpdate,
     PersonSummary,
@@ -211,6 +213,20 @@ def get_persons(
 ) -> list[PersonSummary]:
     persons = services.list_persons(database_session, authenticated.account.id)
     return [PersonSummary.model_validate(person) for person in persons]
+
+
+@router.get(
+    "/notification-capabilities",
+    response_model=NotificationCapabilitiesSummary,
+)
+def get_notification_capabilities(
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> NotificationCapabilitiesSummary:
+    del authenticated
+    return NotificationCapabilitiesSummary(
+        email_available=services.notification_capability(settings),
+    )
 
 
 @router.post("/persons", response_model=PersonSummary, status_code=status.HTTP_201_CREATED)
@@ -784,6 +800,45 @@ def get_health_action_reminder(
         person_id=person_id,
         action_id=action.id,
     )
+    if reminder is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reminder not found",
+        )
+    return HealthActionReminderSummary.model_validate(reminder)
+
+
+@router.put(
+    "/persons/{person_id}/actions/{action_id}/reminder/channels/email",
+    response_model=HealthActionReminderSummary,
+)
+def put_health_action_email_notification(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    payload: HealthActionReminderEmailChannelUpdate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> HealthActionReminderSummary:
+    try:
+        reminder = services.set_health_action_email_notification(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            action_id=action_id,
+            enabled=payload.enabled,
+            email_capability_available=services.notification_capability(settings),
+        )
+    except services.NotificationPreferenceInvalidStateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email reminders require an open action",
+        ) from error
+    except services.NotificationDeliveryCapabilityUnavailableError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email reminders are unavailable",
+        ) from error
     if reminder is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

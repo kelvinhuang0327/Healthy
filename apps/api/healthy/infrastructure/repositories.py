@@ -10,13 +10,17 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session, joinedload
 
 from healthy.domain.actions import HealthActionOriginType, HealthActionStatus
+from healthy.domain.identity import AccountStatus
+from healthy.domain.notifications import NotificationChannel, NotificationDeliveryStatus
 from healthy.infrastructure.models import (
+    Account,
     HealthAction,
     HealthActionOutcome,
     HealthActionReminder,
     HealthMetric,
     HealthReportModel,
     HealthReportObservationModel,
+    NotificationDelivery,
     Person,
     SymptomLog,
 )
@@ -499,6 +503,210 @@ class HealthActionReminderRepository:
             .execution_options(synchronize_session=False, populate_existing=True)
         )
         return database_session.scalars(statement).one_or_none()
+
+    @staticmethod
+    def set_email_enabled(
+        database_session: Session,
+        action_id: uuid.UUID,
+        *,
+        email_enabled: bool,
+        updated_at: datetime,
+    ) -> HealthActionReminder | None:
+        statement = (
+            update(HealthActionReminder)
+            .where(HealthActionReminder.action_id == action_id)
+            .values(
+                email_enabled=email_enabled,
+                updated_at=updated_at,
+            )
+            .returning(HealthActionReminder)
+            .execution_options(synchronize_session=False, populate_existing=True)
+        )
+        return database_session.scalars(statement).one_or_none()
+
+
+class NotificationDeliveryRepository:
+    @staticmethod
+    def list_due_email_candidates(
+        database_session: Session,
+    ) -> list[tuple[Account, HealthActionReminder, HealthAction]]:
+        statement = (
+            select(Account, HealthActionReminder, HealthAction)
+            .join(Person, Person.owner_account_id == Account.id)
+            .join(HealthAction, HealthAction.person_id == Person.id)
+            .join(HealthActionReminder, HealthActionReminder.action_id == HealthAction.id)
+            .where(
+                Account.status == AccountStatus.ACTIVE,
+                HealthAction.status == HealthActionStatus.TODO,
+                HealthActionReminder.email_enabled.is_(True),
+            )
+            .order_by(HealthActionReminder.id)
+        )
+        return list(database_session.execute(statement).tuples())
+
+    @staticmethod
+    def create_pending_if_absent(
+        database_session: Session,
+        *,
+        reminder_id: uuid.UUID,
+        reminder_local_date: date,
+        created_at: datetime,
+    ) -> NotificationDelivery | None:
+        statement = (
+            postgresql_insert(NotificationDelivery)
+            .values(
+                reminder_id=reminder_id,
+                channel=NotificationChannel.EMAIL,
+                reminder_local_date=reminder_local_date,
+                status=NotificationDeliveryStatus.PENDING,
+                attempt_count=0,
+                created_at=created_at,
+                updated_at=created_at,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    NotificationDelivery.reminder_id,
+                    NotificationDelivery.channel,
+                    NotificationDelivery.reminder_local_date,
+                ]
+            )
+            .returning(NotificationDelivery)
+            .execution_options(populate_existing=True)
+        )
+        return database_session.scalars(statement).one_or_none()
+
+    @staticmethod
+    def list_for_reminder(
+        database_session: Session,
+        reminder_id: uuid.UUID,
+    ) -> list[NotificationDelivery]:
+        statement = (
+            select(NotificationDelivery)
+            .where(NotificationDelivery.reminder_id == reminder_id)
+            .order_by(
+                NotificationDelivery.reminder_local_date,
+                NotificationDelivery.created_at,
+                NotificationDelivery.id,
+            )
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def get_by_id(
+        database_session: Session,
+        delivery_id: uuid.UUID,
+    ) -> NotificationDelivery | None:
+        return database_session.get(NotificationDelivery, delivery_id)
+
+    @staticmethod
+    def get_context(
+        database_session: Session,
+        delivery_id: uuid.UUID,
+    ) -> tuple[NotificationDelivery, Account, HealthActionReminder, HealthAction] | None:
+        statement = (
+            select(NotificationDelivery, Account, HealthActionReminder, HealthAction)
+            .join(
+                HealthActionReminder,
+                HealthActionReminder.id == NotificationDelivery.reminder_id,
+            )
+            .join(HealthAction, HealthAction.id == HealthActionReminder.action_id)
+            .join(Person, Person.id == HealthAction.person_id)
+            .join(Account, Account.id == Person.owner_account_id)
+            .where(NotificationDelivery.id == delivery_id)
+        )
+        row = database_session.execute(statement).tuples().one_or_none()
+        return row if row is not None else None
+
+    @staticmethod
+    def claim_next_pending(
+        database_session: Session,
+        *,
+        claimed_at: datetime,
+    ) -> NotificationDelivery | None:
+        statement = (
+            select(NotificationDelivery)
+            .where(
+                NotificationDelivery.channel == NotificationChannel.EMAIL,
+                NotificationDelivery.status == NotificationDeliveryStatus.PENDING,
+            )
+            .order_by(NotificationDelivery.created_at, NotificationDelivery.id)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        delivery = database_session.scalar(statement)
+        if delivery is None:
+            return None
+        delivery.status = NotificationDeliveryStatus.SENDING
+        delivery.claimed_at = claimed_at
+        delivery.attempt_count += 1
+        delivery.updated_at = claimed_at
+        database_session.flush()
+        return delivery
+
+    @staticmethod
+    def list_stale_sending(
+        database_session: Session,
+        *,
+        before: datetime,
+    ) -> list[NotificationDelivery]:
+        statement = (
+            select(NotificationDelivery)
+            .where(
+                NotificationDelivery.channel == NotificationChannel.EMAIL,
+                NotificationDelivery.status == NotificationDeliveryStatus.SENDING,
+                NotificationDelivery.claimed_at.is_not(None),
+                NotificationDelivery.claimed_at < before,
+            )
+            .with_for_update(skip_locked=True)
+            .order_by(NotificationDelivery.claimed_at, NotificationDelivery.id)
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def mark_cancelled(
+        database_session: Session,
+        delivery: NotificationDelivery,
+        *,
+        updated_at: datetime,
+    ) -> None:
+        delivery.status = NotificationDeliveryStatus.CANCELLED
+        delivery.updated_at = updated_at
+
+    @staticmethod
+    def mark_sent(
+        database_session: Session,
+        delivery: NotificationDelivery,
+        *,
+        sent_at: datetime,
+    ) -> None:
+        delivery.status = NotificationDeliveryStatus.SENT
+        delivery.sent_at = sent_at
+        delivery.updated_at = sent_at
+
+    @staticmethod
+    def mark_failed(
+        database_session: Session,
+        delivery: NotificationDelivery,
+        *,
+        failed_at: datetime,
+        failure_code: str,
+    ) -> None:
+        delivery.status = NotificationDeliveryStatus.FAILED
+        delivery.failed_at = failed_at
+        delivery.failure_code = failure_code
+        delivery.updated_at = failed_at
+
+    @staticmethod
+    def mark_unknown(
+        database_session: Session,
+        delivery: NotificationDelivery,
+        *,
+        updated_at: datetime,
+        failure_code: str,
+    ) -> None:
+        delivery.status = NotificationDeliveryStatus.UNKNOWN
+        delivery.failure_code = failure_code
+        delivery.updated_at = updated_at
 
 
 class HealthActionOutcomeRepository:

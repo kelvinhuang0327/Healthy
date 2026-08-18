@@ -65,6 +65,10 @@ class HealthMetricIntegrityError(Exception):
     pass
 
 
+HealthMetricImportError = external_imports.HealthMetricImportError
+HealthMetricImportIntegrityError = external_imports.HealthMetricImportIntegrityError
+
+
 class SymptomLogIntegrityError(Exception):
     pass
 

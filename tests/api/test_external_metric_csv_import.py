@@ -499,3 +499,92 @@ def test_repeated_gets_after_import_are_zero_write(client: TestClient) -> None:
 
     count_after = count_metrics()
     assert count_after == count_before
+
+
+def test_semantic_decimal_idempotency_and_zero_normalization(client: TestClient) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+
+    # 1. Initial import with standard decimal formats
+    csv_initial = (
+        "recorded_at,weight_kg,blood_glucose_mg_dl,sleep_hours\n"
+        "2026-08-01T08:00:00Z,70.5,95.5,7.5\n"
+        "2026-08-01T12:00:00Z,80.0,100.0,0.0\n"
+    )
+    res_initial = _import_csv(client, person_id, csv_initial)
+    assert res_initial.status_code == 200
+    assert res_initial.json() == {
+        "source_type": "external_csv",
+        "total_rows": 2,
+        "imported_count": 2,
+        "duplicate_count": 0,
+    }
+
+    metrics_after_first = client.get(f"/v1/persons/{person_id}/metrics").json()
+    assert len(metrics_after_first) == 2
+
+    # 2. Re-import equivalent decimal representations (trailing zeros, signed/scale zeros)
+    csv_equivalent = (
+        "recorded_at,weight_kg,blood_glucose_mg_dl,sleep_hours\n"
+        "2026-08-01T08:00:00Z,70.50,95.50,7.50\n"
+        "2026-08-01T12:00:00Z,80,100,0.00\n"
+    )
+    res_equiv = _import_csv(client, person_id, csv_equivalent)
+    assert res_equiv.status_code == 200
+    assert res_equiv.json() == {
+        "source_type": "external_csv",
+        "total_rows": 2,
+        "imported_count": 0,
+        "duplicate_count": 2,
+    }
+
+    metrics_after_second = client.get(f"/v1/persons/{person_id}/metrics").json()
+    assert len(metrics_after_second) == 2
+    assert [m["id"] for m in metrics_after_second] == [m["id"] for m in metrics_after_first]
+
+
+def test_surplus_csv_fields_rejects_import_with_zero_writes(client: TestClient) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+
+    # Row 2 contains 3 fields when header has only 2
+    csv_surplus = (
+        "recorded_at,heart_rate_bpm\n2026-08-01T08:00:00Z,72\n2026-08-01T09:00:00Z,75,extra_value\n"
+    )
+    res = _import_csv(client, person_id, csv_surplus)
+    assert res.status_code == 422
+    err = res.json()
+    assert err["detail"]["code"] == "EXTRA_FIELD"
+    assert err["detail"]["row"] == 2
+    assert err["detail"]["field"] is None
+
+    # Zero writes
+    assert len(client.get(f"/v1/persons/{person_id}/metrics").json()) == 0
+
+
+def test_import_integrity_error_mapped_to_privacy_safe_422(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from healthy.infrastructure.repositories import HealthMetricRepository
+    from sqlalchemy.exc import IntegrityError
+
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+
+    def mock_import(*args: object, **kwargs: object) -> int:
+        raise IntegrityError(
+            "mock SQL integrity error: uq_constraint_violation",
+            params={},
+            orig=Exception("internal details"),
+        )
+
+    monkeypatch.setattr(HealthMetricRepository, "import_external_metrics", mock_import)
+
+    csv_data = "recorded_at,heart_rate_bpm\n2026-08-01T08:00:00Z,72\n"
+    res = _import_csv(client, person_id, csv_data)
+    assert res.status_code == 422
+    assert res.json() == {"detail": "Invalid request"}
+    # Assert no leak of internal SQL, constraints, or fingerprints
+    assert "uq_" not in res.text
+    assert "mock SQL" not in res.text

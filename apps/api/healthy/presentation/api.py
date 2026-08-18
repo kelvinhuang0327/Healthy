@@ -369,6 +369,18 @@ def get_health_metric(
     "/persons/{person_id}/metrics/imports/csv",
     response_model=ExternalMetricCsvImportSummary,
     status_code=status.HTTP_200_OK,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "text/csv": {
+                    "schema": {
+                        "type": "string",
+                    },
+                },
+            },
+        },
+    },
 )
 async def post_external_metric_csv_import(
     person_id: uuid.UUID,
@@ -394,7 +406,10 @@ async def post_external_metric_csv_import(
                 "field": error.field,
             },
         ) from error
-    except services.HealthMetricIntegrityError as error:
+    except (
+        services.HealthMetricIntegrityError,
+        services.HealthMetricImportIntegrityError,
+    ) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid request",

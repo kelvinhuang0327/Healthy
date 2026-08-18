@@ -215,6 +215,14 @@ def _parse_recorded_at(raw: str, *, row_number: int) -> datetime:
     return normalized_utc
 
 
+def _canonical_decimal_str(value: Decimal | None, decimal_places: int) -> str | None:
+    if value is None:
+        return None
+    if value.is_zero():
+        value = Decimal(0)
+    return f"{value:.{decimal_places}f}"
+
+
 def build_row_fingerprint(
     *,
     recorded_at: datetime,
@@ -228,17 +236,24 @@ def build_row_fingerprint(
     note: str | None,
 ) -> str:
     canonical_payload = {
-        "blood_glucose_mg_dl": str(blood_glucose_mg_dl)
-        if blood_glucose_mg_dl is not None
-        else None,
+        "blood_glucose_mg_dl": _canonical_decimal_str(
+            blood_glucose_mg_dl,
+            metrics_domain.BLOOD_GLUCOSE_MG_DL_DECIMAL_PLACES,
+        ),
         "diastolic_bp_mm_hg": diastolic_bp_mm_hg,
         "heart_rate_bpm": heart_rate_bpm,
         "note": note,
         "recorded_at": recorded_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
-        "sleep_hours": str(sleep_hours) if sleep_hours is not None else None,
+        "sleep_hours": _canonical_decimal_str(
+            sleep_hours,
+            metrics_domain.SLEEP_HOURS_DECIMAL_PLACES,
+        ),
         "steps": steps,
         "systolic_bp_mm_hg": systolic_bp_mm_hg,
-        "weight_kg": str(weight_kg) if weight_kg is not None else None,
+        "weight_kg": _canonical_decimal_str(
+            weight_kg,
+            metrics_domain.WEIGHT_KG_DECIMAL_PLACES,
+        ),
     }
     canonical = json.dumps(canonical_payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -280,8 +295,13 @@ def parse_health_metric_rows(payload: bytes) -> list[ParsedHealthMetricRow]:
         if row_number > MAX_CSV_ROWS:
             _validation_error(row_number=row_number, field=None, code="TOO_MANY_ROWS")
 
+        if None in raw_row:
+            _validation_error(row_number=row_number, field=None, code="EXTRA_FIELD")
+
         normalized_row: dict[str, str] = {}
         for raw_header, raw_value in raw_row.items():
+            if raw_header is None:
+                continue
             header = _normalize_header(raw_header)
             normalized_row[header] = _normalize_csv_value(raw_value)
 

@@ -320,3 +320,14 @@ def test_runtime_never_auto_creates_schema() -> None:
     source = "\n".join(path.read_text(encoding="utf-8") for path in api_root.rglob("*.py"))
     forbidden = "create" + "_all"
     assert forbidden not in source
+
+
+def test_external_csv_import_request_body_contract() -> None:
+    document = create_app().openapi()
+    operation = document["paths"]["/v1/persons/{person_id}/metrics/imports/csv"]["post"]
+    assert "requestBody" in operation
+    request_body = operation["requestBody"]
+    assert request_body.get("required") is True
+    assert "text/csv" in request_body.get("content", {})
+    schema = request_body["content"]["text/csv"].get("schema", {})
+    assert schema.get("type") == "string"

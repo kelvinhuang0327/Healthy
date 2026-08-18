@@ -24,6 +24,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/persons/{person_id}/profile",
         "/v1/persons/{person_id}/metrics",
         "/v1/persons/{person_id}/metrics/{metric_id}",
+        "/v1/persons/{person_id}/metrics/imports/csv",
         "/v1/persons/{person_id}/health-score",
         "/v1/persons/{person_id}/risk-alerts",
         "/v1/persons/{person_id}/action-recommendations",
@@ -64,6 +65,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("GET", "/v1/persons/{person_id}"),
         ("PATCH", "/v1/persons/{person_id}/profile"),
         ("POST", "/v1/persons/{person_id}/metrics"),
+        ("POST", "/v1/persons/{person_id}/metrics/imports/csv"),
         ("GET", "/v1/persons/{person_id}/metrics"),
         ("GET", "/v1/persons/{person_id}/metrics/{metric_id}"),
         ("GET", "/v1/persons/{person_id}/health-score"),
@@ -153,7 +155,8 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "ck_persons_default_relationship_self"
     }
     assert {index["name"] for index in inspector.get_indexes("health_metrics")} >= {
-        "ix_health_metrics_person_id"
+        "ix_health_metrics_person_id",
+        "uq_health_metrics_person_source_fingerprint",
     }
     sleep_column = next(
         column
@@ -181,6 +184,8 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "ck_health_metrics_steps_bounds",
         "ck_health_metrics_weight_kg_bounds",
         "ck_health_metrics_blood_glucose_mg_dl_bounds",
+        "ck_health_metrics_source_type_allowed",
+        "ck_health_metrics_source_record_fingerprint_length",
     }
     assert {index["name"] for index in inspector.get_indexes("symptom_logs")} >= {
         "ix_symptom_logs_person_id",

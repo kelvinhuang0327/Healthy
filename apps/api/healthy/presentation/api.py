@@ -4,12 +4,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from healthy.application import services
 from healthy.application.services import AuthenticatedSession
 from healthy.domain import reports as reports_domain
+from healthy.domain.external_imports import HealthMetricCsvImportValidationError
 from healthy.infrastructure.config import Settings
 from healthy.infrastructure.models import Person
 from healthy.presentation.dependencies import (
@@ -31,6 +32,7 @@ from healthy.presentation.schemas import (
     AssistantTodaySummary,
     DailyAttentionItemSummary,
     DueHealthActionReminderSummary,
+    ExternalMetricCsvImportSummary,
     HealthActionCreate,
     HealthActionOutcomeCreate,
     HealthActionOutcomeSummary,
@@ -361,6 +363,43 @@ def get_health_metric(
             detail="Metric not found",
         )
     return HealthMetricSummary.model_validate(metric)
+
+
+@router.post(
+    "/persons/{person_id}/metrics/imports/csv",
+    response_model=ExternalMetricCsvImportSummary,
+    status_code=status.HTTP_200_OK,
+)
+async def post_external_metric_csv_import(
+    person_id: uuid.UUID,
+    request: Request,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> ExternalMetricCsvImportSummary:
+    person = _get_owned_person(person_id, authenticated, database_session)
+    payload = await request.body()
+    try:
+        summary = services.import_external_metrics_csv(
+            database_session,
+            person_id=person.id,
+            csv_payload=payload,
+        )
+    except HealthMetricCsvImportValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "message": "Invalid CSV import payload",
+                "code": error.code,
+                "row": error.row_number,
+                "field": error.field,
+            },
+        ) from error
+    except services.HealthMetricIntegrityError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid request",
+        ) from error
+    return ExternalMetricCsvImportSummary.model_validate(summary)
 
 
 @router.get(

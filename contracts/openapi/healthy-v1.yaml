@@ -414,6 +414,35 @@
         "title": "DueHealthActionReminderSummary",
         "type": "object"
       },
+      "ExternalMetricCsvImportSummary": {
+        "properties": {
+          "duplicate_count": {
+            "title": "Duplicate Count",
+            "type": "integer"
+          },
+          "imported_count": {
+            "title": "Imported Count",
+            "type": "integer"
+          },
+          "source_type": {
+            "const": "external_csv",
+            "default": "external_csv",
+            "title": "Source Type",
+            "type": "string"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_rows",
+          "imported_count",
+          "duplicate_count"
+        ],
+        "title": "ExternalMetricCsvImportSummary",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1224,6 +1253,11 @@
               }
             ],
             "title": "Sleep Hours"
+          },
+          "source_type": {
+            "default": "manual",
+            "title": "Source Type",
+            "type": "string"
           },
           "steps": {
             "anyOf": [
@@ -4033,6 +4067,83 @@
           }
         ],
         "summary": "Post Health Metric"
+      }
+    },
+    "/v1/persons/{person_id}/metrics/imports/csv": {
+      "post": {
+        "operationId": "post_external_metric_csv_import_v1_persons__person_id__metrics_imports_csv_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthy_csrf",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthy Csrf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalMetricCsvImportSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Post External Metric Csv Import"
       }
     },
     "/v1/persons/{person_id}/metrics/{metric_id}": {

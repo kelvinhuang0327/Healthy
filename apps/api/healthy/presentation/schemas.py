@@ -198,7 +198,17 @@ class HealthMetricSummary(BaseModel):
     blood_glucose_mg_dl: JsonDecimal | None
     sleep_hours: SleepHours | None
     note: str | None
+    source_type: str = "manual"
     created_at: datetime
+
+
+class ExternalMetricCsvImportSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    source_type: Literal["external_csv"] = "external_csv"
+    total_rows: int
+    imported_count: int
+    duplicate_count: int
 
 
 class HealthAnalyticsMetricSummary(BaseModel):

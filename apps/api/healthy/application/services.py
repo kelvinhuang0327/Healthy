@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from healthy.application import health_score_inputs, risk_alert_inputs
+from healthy.application import external_imports, health_score_inputs, risk_alert_inputs
 from healthy.application.analytics import HealthAnalytics, build_health_analytics
 from healthy.application.history import HistoryItem, build_history
 from healthy.domain import action_recommendations as action_recommendations_domain
@@ -21,6 +21,7 @@ from healthy.domain import insights as insights_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reminders as reminders_domain
 from healthy.domain import reports as reports_domain
+from healthy.domain.external_imports import ExternalMetricCsvImportSummary
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
 from healthy.infrastructure.config import Settings
 from healthy.infrastructure.models import (
@@ -333,6 +334,19 @@ def create_health_metric(
         database_session.rollback()
         raise HealthMetricIntegrityError from error
     return metric
+
+
+def import_external_metrics_csv(
+    database_session: Session,
+    *,
+    person_id: uuid.UUID,
+    csv_payload: bytes,
+) -> ExternalMetricCsvImportSummary:
+    return external_imports.import_external_metrics_csv(
+        database_session,
+        person_id=person_id,
+        csv_payload=csv_payload,
+    )
 
 
 def list_health_metrics(database_session: Session, person_id: uuid.UUID) -> list[HealthMetric]:

@@ -654,9 +654,10 @@ def test_cli_success_and_failure_privacy_and_outputs(tmp_path: Path) -> None:
     assert out_csv.exists()
 
     stdout_json = json.loads(proc.stdout.strip())
-    assert stdout_json["status"] == "success"
-    assert stdout_json["total_rows"] == 1
-    assert stdout_json["output"] == str(out_csv)
+    assert stdout_json == {"status": "success", "total_rows": 1}
+    assert "output" not in stdout_json
+    assert str(out_csv) not in proc.stdout
+    assert str(out_csv) not in proc.stderr
 
     # Ensure stdout/stderr does NOT contain health values or notes
     assert "Confidential" not in proc.stdout
@@ -822,3 +823,153 @@ def test_postgresql_legacy_source_read_only_and_data_types(tmp_path: Path) -> No
         with admin_engine.begin() as conn:
             conn.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE;"))  # noqa: S608
         admin_engine.dispose()
+
+
+def test_existing_destination_with_incompatible_export_preserves_destination_bytes(
+    tmp_path: Path,
+) -> None:
+    db_file = tmp_path / "legacy.db"
+    conn = _setup_legacy_sqlite_db(db_file)
+
+    user_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    _insert_person(conn, person_id, user_id, "User Default", 1)
+
+    # Incompatible row (unpaired blood pressure)
+    conn.execute(
+        "INSERT INTO health_metrics ("
+        "  id, user_id, subject_profile_id, recorded_at, systolic_bp, diastolic_bp"
+        ") VALUES (?, ?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), user_id, person_id, "2026-08-01T10:00:00Z", 120, None),
+    )
+    conn.commit()
+    conn.close()
+
+    sentinel_bytes = b"PRE_EXISTING_SENTINEL_INCOMPATIBLE_EXPORT_REMAINS_INTACT"
+    out_csv = tmp_path / "existing_output.csv"
+    out_csv.write_bytes(sentinel_bytes)
+
+    db_url = f"sqlite:///{db_file}"
+    with pytest.raises(LegacyExportCompatibilityError):
+        export_legacy_health_metrics_to_file(db_url, person_id, out_csv)
+
+    assert out_csv.exists()
+    assert out_csv.read_bytes() == sentinel_bytes
+    temp_files = list(tmp_path.glob(".tmp_*"))
+    assert temp_files == []
+
+
+def test_existing_destination_with_valid_export_fails_closed_with_output_exists(
+    tmp_path: Path,
+) -> None:
+    db_file = tmp_path / "legacy.db"
+    conn = _setup_legacy_sqlite_db(db_file)
+
+    user_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    _insert_person(conn, person_id, user_id, "User Default", 1)
+
+    conn.execute(
+        "INSERT INTO health_metrics (id, user_id, subject_profile_id, recorded_at, heart_rate) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), user_id, person_id, "2026-08-01T10:00:00Z", 72),
+    )
+    conn.commit()
+    conn.close()
+
+    sentinel_bytes = b"PRE_EXISTING_SENTINEL_VALID_EXPORT_FAILS_CLOSED"
+    out_csv = tmp_path / "existing_output.csv"
+    out_csv.write_bytes(sentinel_bytes)
+
+    db_url = f"sqlite:///{db_file}"
+    with pytest.raises(LegacyExportCompatibilityError) as exc_info:
+        export_legacy_health_metrics_to_file(db_url, person_id, out_csv)
+
+    assert exc_info.value.code == "OUTPUT_EXISTS"
+    assert out_csv.exists()
+    assert out_csv.read_bytes() == sentinel_bytes
+    temp_files = list(tmp_path.glob(".tmp_*"))
+    assert temp_files == []
+
+
+def test_sqlite_source_path_used_as_output_fails_safely_and_preserves_database(
+    tmp_path: Path,
+) -> None:
+    db_file = tmp_path / "legacy.db"
+    conn = _setup_legacy_sqlite_db(db_file)
+
+    user_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    _insert_person(conn, person_id, user_id, "User Default", 1)
+
+    metric_id = str(uuid.uuid4())
+    conn.execute(
+        """
+        INSERT INTO health_metrics (
+            id, user_id, subject_profile_id, recorded_at, systolic_bp, diastolic_bp, heart_rate
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (metric_id, user_id, person_id, "2026-08-01T10:00:00Z", 120, 80, 72),
+    )
+    conn.commit()
+    conn.close()
+
+    db_bytes_before = db_file.read_bytes()
+    db_url = f"sqlite:///{db_file}"
+
+    with pytest.raises(LegacyExportCompatibilityError) as exc_info:
+        export_legacy_health_metrics_to_file(db_url, person_id, db_file)
+
+    assert exc_info.value.code == "OUTPUT_EXISTS"
+    assert db_file.exists()
+    assert db_file.read_bytes() == db_bytes_before
+
+    verify_conn = sqlite3.connect(db_file)
+    rows = verify_conn.execute("SELECT id, recorded_at, heart_rate FROM health_metrics").fetchall()
+    verify_conn.close()
+    assert len(rows) == 1
+    assert rows[0] == (metric_id, "2026-08-01T10:00:00Z", 72)
+    temp_files = list(tmp_path.glob(".tmp_*"))
+    assert temp_files == []
+
+
+def test_temporary_and_finalization_failure_cleans_temp_and_preserves_preexisting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import os as real_os
+
+    db_file = tmp_path / "legacy.db"
+    conn = _setup_legacy_sqlite_db(db_file)
+
+    user_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    _insert_person(conn, person_id, user_id, "User Default", 1)
+
+    conn.execute(
+        "INSERT INTO health_metrics (id, user_id, subject_profile_id, recorded_at, heart_rate) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), user_id, person_id, "2026-08-01T10:00:00Z", 72),
+    )
+    conn.commit()
+    conn.close()
+
+    db_url = f"sqlite:///{db_file}"
+    out_csv = tmp_path / "fail_link_out.csv"
+
+    orig_link = real_os.link
+
+    def mock_link(src: Path | str, dst: Path | str) -> None:
+        Path(dst).write_bytes(b"CONCURRENTLY_CREATED_SENTINEL")
+        orig_link(src, dst)
+
+    monkeypatch.setattr("healthy.application.legacy_metric_export.os.link", mock_link)
+
+    with pytest.raises(LegacyExportCompatibilityError) as exc_info:
+        export_legacy_health_metrics_to_file(db_url, person_id, out_csv)
+
+    assert exc_info.value.code == "OUTPUT_EXISTS"
+    assert out_csv.exists()
+    assert out_csv.read_bytes() == b"CONCURRENTLY_CREATED_SENTINEL"
+    temp_files = list(tmp_path.glob(".tmp_*"))
+    assert temp_files == []

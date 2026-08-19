@@ -49,7 +49,6 @@ def main() -> int:
         output_metadata = {
             "status": "success",
             "total_rows": result.total_rows,
-            "output": str(args.output),
         }
         print(json.dumps(output_metadata))
         return 0

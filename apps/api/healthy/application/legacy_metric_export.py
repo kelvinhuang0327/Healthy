@@ -399,24 +399,31 @@ def export_legacy_health_metrics_to_file(
     output_path: Path | str,
 ) -> LegacyExportResult:
     dest = Path(output_path).resolve()
-    temp_file: Path | None = None
+    if os.path.lexists(dest):
+        raise LegacyExportCompatibilityError(
+            code="OUTPUT_EXISTS",
+            row_number=None,
+            field=None,
+        )
+
+    result = export_legacy_health_metrics_csv(legacy_database_url, legacy_person_id)
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    temp_file = dest.parent / f".tmp_{dest.name}_{uuid.uuid4().hex}"
     try:
-        result = export_legacy_health_metrics_csv(legacy_database_url, legacy_person_id)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        temp_file = dest.parent / f".tmp_{dest.name}_{uuid.uuid4().hex}"
         temp_file.write_bytes(result.csv_bytes)
-        os.replace(temp_file, dest)
-        temp_file = None
+        try:
+            os.link(temp_file, dest)
+        except FileExistsError as exc:
+            raise LegacyExportCompatibilityError(
+                code="OUTPUT_EXISTS",
+                row_number=None,
+                field=None,
+            ) from exc
         return result
-    except Exception:
-        if temp_file is not None and temp_file.exists():
+    finally:
+        if temp_file.exists():
             try:
                 temp_file.unlink()
             except OSError:
                 pass
-        if dest.exists():
-            try:
-                dest.unlink()
-            except OSError:
-                pass
-        raise

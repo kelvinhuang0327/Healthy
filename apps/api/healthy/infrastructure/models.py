@@ -199,6 +199,22 @@ class HealthMetric(Base):
             f" AND {metrics_domain.BLOOD_GLUCOSE_MG_DL_MAX}",
             name="blood_glucose_mg_dl_bounds",
         ),
+        CheckConstraint(
+            "source_type IN ('manual', 'external_csv')",
+            name="source_type_allowed",
+        ),
+        CheckConstraint(
+            "source_record_fingerprint IS NULL OR char_length(source_record_fingerprint) = 64",
+            name="source_record_fingerprint_length",
+        ),
+        Index(
+            "uq_health_metrics_person_source_fingerprint",
+            "person_id",
+            "source_type",
+            "source_record_fingerprint",
+            unique=True,
+            postgresql_where=text("source_record_fingerprint IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -220,6 +236,12 @@ class HealthMetric(Base):
     blood_glucose_mg_dl: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
     sleep_hours: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     note: Mapped[str | None] = mapped_column(String(metrics_domain.NOTE_MAX_LENGTH))
+    source_type: Mapped[str] = mapped_column(
+        String(32),
+        default="manual",
+        server_default=text("'manual'"),
+    )
+    source_record_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

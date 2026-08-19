@@ -8,6 +8,7 @@ import {
   type ActionRecommendations,
   type AssistantToday,
   type DueHealthActionReminder,
+  type ExternalMetricCsvImportSummary,
   type HealthAction,
   type HealthActionReminder,
   type HealthMetric,
@@ -110,6 +111,9 @@ export default function Home() {
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   );
   const [heightSaving, setHeightSaving] = useState(false);
+  const [csvImportSummary, setCsvImportSummary] =
+    useState<ExternalMetricCsvImportSummary | null>(null);
+  const [csvImporting, setCsvImporting] = useState(false);
   const [error, setError] = useState("");
 
   async function loadActionReminders(
@@ -474,6 +478,48 @@ export default function Home() {
       setError(
         reason instanceof Error ? reason.message : "Metric entry failed",
       );
+    }
+  }
+
+  async function importMetricCsv(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setCsvImportSummary(null);
+    const personId = selectedPerson?.id;
+    if (!personId) {
+      return;
+    }
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const file = form.get("csv_file") as File | null;
+    const rawText = String(form.get("csv_text") ?? "").trim();
+    let payload = "";
+
+    if (file && file.size > 0) {
+      payload = await file.text();
+    } else if (rawText) {
+      payload = rawText;
+    } else {
+      setError("Please select a CSV file or paste CSV content");
+      return;
+    }
+
+    setCsvImporting(true);
+    try {
+      const summary = await api.importMetricCsv(personId, payload);
+      setCsvImportSummary(summary);
+      formElement.reset();
+      const rows = await api.healthMetrics(personId);
+      setMetrics(rows);
+      await refreshHealthScore();
+      await refreshAssistantToday();
+      await refreshRiskSignals();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "CSV import failed",
+      );
+    } finally {
+      setCsvImporting(false);
     }
   }
 
@@ -1362,6 +1408,52 @@ export default function Home() {
           ) : null}
 
           {selectedPerson ? (
+            <article className="card" data-testid="metric-csv-import-card">
+              <h2>Import health metrics CSV for {selectedPerson.display_name}</h2>
+              <p className="muted">
+                Mandatory column: <code>recorded_at</code>. Supported metric columns:{" "}
+                <code>systolic_bp_mm_hg</code>, <code>diastolic_bp_mm_hg</code>, <code>heart_rate_bpm</code>,{" "}
+                <code>steps</code>, <code>weight_kg</code>, <code>blood_glucose_mg_dl</code>, <code>sleep_hours</code>, <code>note</code>.
+              </p>
+              <form onSubmit={importMetricCsv} data-testid="metric-csv-import-form">
+                <label>
+                  CSV file
+                  <input
+                    name="csv_file"
+                    type="file"
+                    accept=".csv,text/csv"
+                    data-testid="metric-csv-file-input"
+                  />
+                </label>
+                <label>
+                  Or paste CSV text
+                  <textarea
+                    name="csv_text"
+                    rows={4}
+                    placeholder={"recorded_at,heart_rate_bpm,steps\n2026-08-01T08:00:00Z,72,8000"}
+                    data-testid="metric-csv-text-input"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={csvImporting}
+                  data-testid="metric-csv-submit-button"
+                >
+                  {csvImporting ? "Importing..." : "Import CSV"}
+                </button>
+              </form>
+              {csvImportSummary ? (
+                <div className="import-summary" data-testid="metric-csv-summary">
+                  <p>
+                    Import complete: <strong>{csvImportSummary.imported_count}</strong> imported,{" "}
+                    <strong>{csvImportSummary.duplicate_count}</strong> duplicate/existing (total {csvImportSummary.total_rows} rows).
+                  </p>
+                </div>
+              ) : null}
+            </article>
+          ) : null}
+
+          {selectedPerson ? (
             <article className="card">
               <h2>Health metric history for {selectedPerson.display_name}</h2>
               <ul className="metrics" data-testid="metric-list">
@@ -1372,7 +1464,19 @@ export default function Home() {
                     data-testid="metric-card"
                     data-metric-id={metric.id}
                   >
-                    <span>{new Date(metric.recorded_at).toLocaleString()}</span>
+                    <div className="metric-header">
+                      <span>{new Date(metric.recorded_at).toLocaleString()}</span>
+                      <span
+                        className={`source-badge ${
+                          metric.source_type === "external_csv"
+                            ? "source-imported"
+                            : "source-manual"
+                        }`}
+                        data-testid="metric-source-badge"
+                      >
+                        {metric.source_type === "external_csv" ? "Imported CSV" : "Manual"}
+                      </span>
+                    </div>
                     <ul className="metric-values">
                       {metric.systolic_bp_mm_hg !== null &&
                       metric.diastolic_bp_mm_hg !== null ? (

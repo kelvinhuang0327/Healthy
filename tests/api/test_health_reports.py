@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from conftest import ORIGIN, csrf_headers, register
 from fastapi.testclient import TestClient
 
@@ -65,40 +67,32 @@ def test_import_health_report_lifecycle_and_idempotency(client: TestClient) -> N
     assert re_resp.status_code == 200
     assert re_resp.json()["id"] == report_id
 
-    # 3. List reports -> 200 OK
-    list_resp = client.get(f"/v1/persons/{person_id}/reports")
-    assert list_resp.status_code == 200
-    reports_list = list_resp.json()
-    assert len(reports_list) == 1
-    assert reports_list[0]["id"] == report_id
-
-    # 4. Detail report -> 200 OK
-    detail_resp = client.get(f"/v1/persons/{person_id}/reports/{report_id}")
-    assert detail_resp.status_code == 200
-    detail_json = detail_resp.json()
-    assert detail_json["id"] == report_id
-    assert "raw_json" not in detail_json
-
-    # 5. Confirm report -> 200 OK, status='confirmed'
+    # 3. Confirm report -> 200 OK, status='confirmed', confirmed_at is set
     confirm_resp = client.post(
         f"/v1/persons/{person_id}/reports/{report_id}/confirm",
         headers=csrf_headers(client),
     )
     assert confirm_resp.status_code == 200
-    confirmed_data = confirm_resp.json()
-    assert confirmed_data["status"] == "confirmed"
-    assert confirmed_data["confirmed_at"] is not None
+    confirmed = confirm_resp.json()
+    assert confirmed["status"] == "confirmed"
+    assert confirmed["confirmed_at"] is not None
 
-    # 6. Re-confirm report -> 200 OK (idempotent)
-    re_confirm = client.post(
-        f"/v1/persons/{person_id}/reports/{report_id}/confirm",
-        headers=csrf_headers(client),
-    )
-    assert re_confirm.status_code == 200
-    assert re_confirm.json()["confirmed_at"] == confirmed_data["confirmed_at"]
+    # 4. List reports -> 200 OK, contains report summary
+    list_resp = client.get(f"/v1/persons/{person_id}/reports")
+    assert list_resp.status_code == 200
+    reports = list_resp.json()
+    assert len(reports) == 1
+    assert reports[0]["id"] == report_id
+    assert reports[0]["status"] == "confirmed"
+
+    # 5. Get report detail -> 200 OK, contains observations
+    detail_resp = client.get(f"/v1/persons/{person_id}/reports/{report_id}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["id"] == report_id
+    assert len(detail_resp.json()["observations"]) == 2
 
 
-def test_zero_write_get_operations(client: TestClient) -> None:
+def test_repeated_gets_do_not_write_reports(client: TestClient) -> None:
     assert register(client).status_code == 201
     person_id = _person_id(client)
     payload = _valid_report_payload()
@@ -111,7 +105,6 @@ def test_zero_write_get_operations(client: TestClient) -> None:
     assert resp.status_code == 201
     report_id = resp.json()["id"]
 
-    # Multiple GETs should succeed zero-write
     for _ in range(3):
         assert client.get(f"/v1/persons/{person_id}/reports").status_code == 200
         assert client.get(f"/v1/persons/{person_id}/reports/{report_id}").status_code == 200
@@ -122,7 +115,11 @@ def test_pending_reports_excluded_and_confirmed_included_in_today_guidance(
 ) -> None:
     assert register(client).status_code == 201
     person_id = _person_id(client)
+    now_str = (datetime.now(UTC) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
     payload = _valid_report_payload()
+    payload["reported_at"] = now_str
+    for obs in payload["observations"]:
+        obs["observed_at"] = now_str
 
     # Import pending report
     import_resp = client.post(

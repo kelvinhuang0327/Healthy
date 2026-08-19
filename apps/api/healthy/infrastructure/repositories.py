@@ -5,11 +5,16 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session, joinedload
 
 from healthy.domain.actions import HealthActionOriginType, HealthActionStatus
+from healthy.domain.external_imports import (
+    SOURCE_TYPE_EXTERNAL_CSV,
+    SOURCE_TYPE_MANUAL,
+    ParsedHealthMetricRow,
+)
 from healthy.domain.identity import AccountStatus
 from healthy.domain.notifications import NotificationChannel, NotificationDeliveryStatus
 from healthy.infrastructure.models import (
@@ -109,9 +114,61 @@ class HealthMetricRepository:
             blood_glucose_mg_dl=blood_glucose_mg_dl,
             sleep_hours=sleep_hours,
             note=note,
+            source_type=SOURCE_TYPE_MANUAL,
+            source_record_fingerprint=None,
         )
         database_session.add(metric)
         return metric
+
+    @staticmethod
+    def import_external_metrics(
+        database_session: Session,
+        person_id: uuid.UUID,
+        rows: list[ParsedHealthMetricRow],
+    ) -> int:
+        if not rows:
+            return 0
+        seen_fingerprints: set[str] = set()
+        unique_rows: list[ParsedHealthMetricRow] = []
+        for row in rows:
+            if row.source_record_fingerprint not in seen_fingerprints:
+                seen_fingerprints.add(row.source_record_fingerprint)
+                unique_rows.append(row)
+
+        inserted_count = 0
+        for row in unique_rows:
+            statement = (
+                postgresql_insert(HealthMetric)
+                .values(
+                    person_id=person_id,
+                    recorded_at=row.recorded_at,
+                    systolic_bp_mm_hg=row.systolic_bp_mm_hg,
+                    diastolic_bp_mm_hg=row.diastolic_bp_mm_hg,
+                    heart_rate_bpm=row.heart_rate_bpm,
+                    steps=row.steps,
+                    weight_kg=row.weight_kg,
+                    blood_glucose_mg_dl=row.blood_glucose_mg_dl,
+                    sleep_hours=row.sleep_hours,
+                    note=row.note,
+                    source_type=SOURCE_TYPE_EXTERNAL_CSV,
+                    source_record_fingerprint=row.source_record_fingerprint,
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[
+                        HealthMetric.person_id,
+                        HealthMetric.source_type,
+                        HealthMetric.source_record_fingerprint,
+                    ],
+                    index_where=text("source_record_fingerprint IS NOT NULL"),
+                )
+                .returning(HealthMetric.id)
+            )
+            result = database_session.execute(statement).scalar_one_or_none()
+            if result is not None:
+                inserted_count += 1
+
+        database_session.flush()
+        return inserted_count
 
     @staticmethod
     def list_for_person(database_session: Session, person_id: uuid.UUID) -> list[HealthMetric]:

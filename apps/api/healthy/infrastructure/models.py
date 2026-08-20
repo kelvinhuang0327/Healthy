@@ -233,7 +233,7 @@ class HealthMetric(Base):
     heart_rate_bpm: Mapped[int | None] = mapped_column(Integer)
     steps: Mapped[int | None] = mapped_column(Integer)
     weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
-    blood_glucose_mg_dl: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    blood_glucose_mg_dl: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     sleep_hours: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     note: Mapped[str | None] = mapped_column(String(metrics_domain.NOTE_MAX_LENGTH))
     source_type: Mapped[str] = mapped_column(

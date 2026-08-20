@@ -354,12 +354,12 @@ def test_precision_incompatibility_fails_closed_without_output(tmp_path: Path) -
 
     _insert_person(conn, person_id, user_id, "User Default", 1)
 
-    # 95.55 has 2 decimal places, exceeding Healthy's 1 decimal place limit for blood glucose
+    # 1000.01 is representable by legacy NUMERIC(7,2) but outside Healthy's range.
     conn.execute(
         "INSERT INTO health_metrics ("
         "  id, user_id, subject_profile_id, recorded_at, blood_glucose"
         ") VALUES (?, ?, ?, ?, ?)",
-        (str(uuid.uuid4()), user_id, person_id, "2026-08-01T10:00:00Z", "95.55"),
+        (str(uuid.uuid4()), user_id, person_id, "2026-08-01T10:00:00Z", "1000.01"),
     )
     conn.commit()
     conn.close()
@@ -370,7 +370,7 @@ def test_precision_incompatibility_fails_closed_without_output(tmp_path: Path) -
     with pytest.raises(LegacyExportCompatibilityError) as exc_info:
         export_legacy_health_metrics_to_file(db_url, person_id, output_csv)
 
-    assert exc_info.value.code == "INVALID_PRECISION"
+    assert exc_info.value.code == "OUT_OF_RANGE"
     assert exc_info.value.field == "blood_glucose_mg_dl"
     assert exc_info.value.row_number == 1
     assert not output_csv.exists()
@@ -795,7 +795,7 @@ def test_postgresql_legacy_source_read_only_and_data_types(tmp_path: Path) -> No
                 ) VALUES (
                     :id, :user_id, :person_id, '2026-08-01 10:00:00+00',
                     120, 80, 70, 8000,
-                    72.50, 95.0, 7.50, 'PG metric note'
+                    72.50, 95.55, 7.50, 'PG metric note'
                 )
                 """  # noqa: S608
             ),
@@ -816,7 +816,7 @@ def test_postgresql_legacy_source_read_only_and_data_types(tmp_path: Path) -> No
         assert parsed[0].diastolic_bp_mm_hg == 80
         assert parsed[0].heart_rate_bpm == 70
         assert parsed[0].weight_kg == Decimal("72.50")
-        assert parsed[0].blood_glucose_mg_dl == Decimal("95.0")
+        assert parsed[0].blood_glucose_mg_dl == Decimal("95.55")
         assert parsed[0].sleep_hours == Decimal("7.50")
         assert parsed[0].note == "PG metric note"
     finally:

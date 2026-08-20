@@ -145,6 +145,7 @@ class HealthMetricCreate(BaseModel):
             Field(
                 ge=metrics_domain.BLOOD_GLUCOSE_MG_DL_MIN,
                 le=metrics_domain.BLOOD_GLUCOSE_MG_DL_MAX,
+                max_digits=metrics_domain.BLOOD_GLUCOSE_MG_DL_MAX_DIGITS,
                 decimal_places=metrics_domain.BLOOD_GLUCOSE_MG_DL_DECIMAL_PLACES,
             ),
         ]

@@ -108,7 +108,7 @@ def test_create_requires_paired_blood_pressure(client: TestClient) -> None:
         {"weight_kg": 0.5},
         {"weight_kg": 70.123},
         {"blood_glucose_mg_dl": 5.0},
-        {"blood_glucose_mg_dl": 95.55},
+        {"blood_glucose_mg_dl": 95.555},
         {"sleep_hours": 100.00},
         {"sleep_hours": 7.123},
     ],
@@ -121,6 +121,30 @@ def test_create_rejects_out_of_range_or_imprecise_values(
     person_id = _person_id(client)
     response = _create_metric(client, person_id, **overrides)
     assert response.status_code == 422
+
+
+def test_manual_two_decimal_glucose_round_trips_exactly(client: TestClient) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+
+    response = _create_metric(
+        client,
+        person_id,
+        recorded_at="2026-08-01T08:00:00Z",
+        blood_glucose_mg_dl=95.55,
+    )
+    assert response.status_code == 201, response.text
+    metric_id = response.json()["id"]
+    assert Decimal(str(response.json()["blood_glucose_mg_dl"])) == Decimal("95.55")
+
+    with next(Database(DATABASE_URL).sessions()) as database_session:
+        stored = database_session.get(HealthMetric, uuid.UUID(metric_id))
+        assert stored is not None
+        assert stored.blood_glucose_mg_dl == Decimal("95.55")
+
+    readback = client.get(f"/v1/persons/{person_id}/metrics/{metric_id}")
+    assert readback.status_code == 200
+    assert Decimal(str(readback.json()["blood_glucose_mg_dl"])) == Decimal("95.55")
 
 
 def test_create_rejects_recorded_at_more_than_five_minutes_in_future(

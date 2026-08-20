@@ -223,6 +223,18 @@ def _canonical_decimal_str(value: Decimal | None, decimal_places: int) -> str | 
     return f"{value:.{decimal_places}f}"
 
 
+def _canonical_blood_glucose_str(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    if value.is_zero():
+        value = Decimal(0)
+    formatted = format(value, "f")
+    if "." not in formatted:
+        return f"{formatted}.0"
+    integer, fractional = formatted.split(".", maxsplit=1)
+    return f"{integer}.{fractional.rstrip('0') or '0'}"
+
+
 def build_row_fingerprint(
     *,
     recorded_at: datetime,
@@ -236,10 +248,7 @@ def build_row_fingerprint(
     note: str | None,
 ) -> str:
     canonical_payload = {
-        "blood_glucose_mg_dl": _canonical_decimal_str(
-            blood_glucose_mg_dl,
-            metrics_domain.BLOOD_GLUCOSE_MG_DL_DECIMAL_PLACES,
-        ),
+        "blood_glucose_mg_dl": _canonical_blood_glucose_str(blood_glucose_mg_dl),
         "diastolic_bp_mm_hg": diastolic_bp_mm_hg,
         "heart_rate_bpm": heart_rate_bpm,
         "note": note,
@@ -355,7 +364,7 @@ def parse_health_metric_rows(payload: bytes) -> list[ParsedHealthMetricRow]:
             field="blood_glucose_mg_dl",
             minimum=metrics_domain.BLOOD_GLUCOSE_MG_DL_MIN,
             maximum=metrics_domain.BLOOD_GLUCOSE_MG_DL_MAX,
-            max_digits=5,
+            max_digits=metrics_domain.BLOOD_GLUCOSE_MG_DL_MAX_DIGITS,
             decimal_places=metrics_domain.BLOOD_GLUCOSE_MG_DL_DECIMAL_PLACES,
         )
         sleep_hours = _parse_decimal(

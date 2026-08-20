@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import concurrent.futures
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from conftest import DATABASE_URL, ORIGIN, csrf_headers, register
 from fastapi.testclient import TestClient
+from healthy.domain.external_imports import parse_health_metric_rows
 from healthy.infrastructure.database import Database
 from healthy.infrastructure.models import HealthMetric
 from sqlalchemy import func, select
@@ -70,6 +72,99 @@ def test_owned_person_can_import_valid_csv_and_view_in_history(client: TestClien
     history_items = history_res.json()
     metric_history = [item for item in history_items if item["kind"] == "metric"]
     assert len(metric_history) == 2
+
+
+def test_two_decimal_glucose_accepts_exact_precision_and_max_boundary(
+    client: TestClient,
+) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+    csv_data = (
+        "recorded_at,blood_glucose_mg_dl\n"
+        "2026-08-01T08:00:00Z,95.55\n"
+        "2026-08-01T09:00:00Z,1000.00\n"
+    )
+
+    response = _import_csv(client, person_id, csv_data)
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "source_type": "external_csv",
+        "total_rows": 2,
+        "imported_count": 2,
+        "duplicate_count": 0,
+    }
+
+    with next(Database(DATABASE_URL).sessions()) as database_session:
+        values = set(database_session.scalars(select(HealthMetric.blood_glucose_mg_dl)).all())
+    assert values == {Decimal("95.55"), Decimal("1000.00")}
+
+
+def test_blood_glucose_fingerprints_preserve_old_valid_forms() -> None:
+    rows = parse_health_metric_rows(
+        b"recorded_at,blood_glucose_mg_dl\n"
+        b"2026-08-01T08:00:00Z,95\n"
+        b"2026-08-01T08:00:00Z,95.0\n"
+        b"2026-08-01T08:00:00Z,95.00\n"
+        b"2026-08-01T08:00:00Z,95.5\n"
+        b"2026-08-01T08:00:00Z,95.50\n"
+        b"2026-08-01T08:00:00Z,95.55\n"
+    )
+    fingerprints = [row.source_record_fingerprint for row in rows]
+    assert (
+        fingerprints[:3]
+        == [
+            "87b92e40ce8630ac4a1c3aafdaf5ca4f688e2045a272c8d809516e02395846b4",
+        ]
+        * 3
+    )
+    assert (
+        fingerprints[3:5]
+        == [
+            "34c08e66897ca36e96c9fcc086db4db0adcdbdc2ead7baddd065e8453d3ecb22",
+        ]
+        * 2
+    )
+    assert fingerprints[5] not in set(fingerprints[:5])
+    assert (
+        fingerprints[5]
+        == parse_health_metric_rows(
+            b"recorded_at,blood_glucose_mg_dl\n2026-08-01T08:00:00Z,95.55\n"
+        )[0].source_record_fingerprint
+    )
+
+
+def test_glucose_fingerprints_keep_one_decimal_dedupe_and_distinguish_two_decimal(
+    client: TestClient,
+) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+    initial = (
+        "recorded_at,blood_glucose_mg_dl\n2026-08-01T08:00:00Z,95.5\n2026-08-01T08:00:00Z,95.55\n"
+    )
+    first = _import_csv(client, person_id, initial)
+    assert first.status_code == 200, first.text
+    assert first.json()["imported_count"] == 2
+
+    equivalent = (
+        "recorded_at,blood_glucose_mg_dl\n2026-08-01T08:00:00Z,95.50\n2026-08-01T08:00:00Z,95.55\n"
+    )
+    second = _import_csv(client, person_id, equivalent)
+    assert second.status_code == 200, second.text
+    assert second.json() == {
+        "source_type": "external_csv",
+        "total_rows": 2,
+        "imported_count": 0,
+        "duplicate_count": 2,
+    }
+
+    with next(Database(DATABASE_URL).sessions()) as database_session:
+        stored = list(
+            database_session.execute(
+                select(HealthMetric.blood_glucose_mg_dl, HealthMetric.source_record_fingerprint)
+            ).tuples()
+        )
+    assert {value for value, _ in stored} == {Decimal("95.5"), Decimal("95.55")}
+    assert len({fingerprint for _, fingerprint in stored}) == 2
 
 
 def test_foreign_person_import_is_inaccessible_and_unauthorized_fails(client: TestClient) -> None:
@@ -199,8 +294,14 @@ def test_unpaired_blood_pressure_rejects_entire_import(client: TestClient) -> No
             "blood_glucose_mg_dl",
         ),
         (
-            "recorded_at,blood_glucose_mg_dl\n2026-08-01T08:00:00Z,95.55\n",
+            "recorded_at,blood_glucose_mg_dl\n2026-08-01T08:00:00Z,95.555\n",
             "INVALID_PRECISION",
+            1,
+            "blood_glucose_mg_dl",
+        ),
+        (
+            "recorded_at,blood_glucose_mg_dl\n2026-08-01T08:00:00Z,1000.01\n",
+            "OUT_OF_RANGE",
             1,
             "blood_glucose_mg_dl",
         ),

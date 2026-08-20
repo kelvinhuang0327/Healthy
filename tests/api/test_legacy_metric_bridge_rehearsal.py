@@ -67,7 +67,7 @@ DEFAULT_DECIMAL_METRIC = LegacyMetricFixture(
     user_id=OWNER_A,
     subject_profile_id=DEFAULT_PERSON_A,
     recorded_at=datetime.fromisoformat("2026-08-03T09:00:00Z"),
-    blood_glucose=Decimal("95.5"),
+    blood_glucose=Decimal("95.55"),
     weight_kg=Decimal("70.50"),
     sleep_hours=Decimal("7.50"),
     note="Default Person decimal measurement",
@@ -100,8 +100,8 @@ INCOMPATIBLE_METRIC = LegacyMetricFixture(
     user_id=OWNER_A,
     subject_profile_id=INCOMPATIBLE_PERSON_A,
     recorded_at=datetime.fromisoformat("2026-08-06T09:00:00Z"),
-    blood_glucose=Decimal("95.55"),
-    note="Incompatible precision metric",
+    blood_glucose=Decimal("1000.01"),
+    note="Incompatible range metric",
 )
 
 PERSON_FIXTURES = (
@@ -154,7 +154,7 @@ def _create_legacy_fixture(engine: Engine, schema_name: str) -> None:
                     systolic_bp INTEGER,
                     diastolic_bp INTEGER,
                     heart_rate INTEGER,
-                    blood_glucose NUMERIC,
+                    blood_glucose NUMERIC(7,2),
                     weight_kg NUMERIC,
                     sleep_hours NUMERIC,
                     steps INTEGER,
@@ -404,7 +404,7 @@ def test_legacy_metric_bridge_rehearsal_uses_postgres_export_and_http_import(
                 _import_csv(failure_client, failure_person_id, incompatible_export.csv_bytes)
 
             assert import_attempted is False
-            assert error_info.value.code == "INVALID_PRECISION"
+            assert error_info.value.code == "OUT_OF_RANGE"
             assert error_info.value.row_number == 1
             assert error_info.value.field == "blood_glucose_mg_dl"
             assert failure_client.get(f"/v1/persons/{failure_person_id}/metrics").json() == []

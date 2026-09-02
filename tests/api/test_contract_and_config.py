@@ -122,7 +122,7 @@ def test_production_configuration_fails_closed(
         Settings.from_env()
 
 
-def test_migration_created_required_postgres_constraints_and_indexes() -> None:
+def test_migration_created_required_database_constraints_and_indexes() -> None:
     inspector = inspect(Database(DATABASE_URL).engine)
     assert set(inspector.get_table_names()) >= {
         "alembic_version",
@@ -148,6 +148,9 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
     assert {index["name"] for index in inspector.get_indexes("health_metrics")} >= {
         "ix_health_metrics_person_id"
     }
+    assert {
+        constraint["name"] for constraint in inspector.get_unique_constraints("health_metrics")
+    } >= {"uq_health_metrics_person_source_record_fingerprint"}
     sleep_column = next(
         column
         for column in inspector.get_columns("health_metrics")
@@ -174,6 +177,8 @@ def test_migration_created_required_postgres_constraints_and_indexes() -> None:
         "ck_health_metrics_steps_bounds",
         "ck_health_metrics_weight_kg_bounds",
         "ck_health_metrics_blood_glucose_mg_dl_bounds",
+        "ck_health_metrics_source_type_allowed",
+        "ck_health_metrics_source_record_consistent",
     }
     assert {index["name"] for index in inspector.get_indexes("symptom_logs")} >= {
         "ix_symptom_logs_person_id",

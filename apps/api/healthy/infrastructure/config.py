@@ -3,6 +3,10 @@ from __future__ import annotations
 import os
 import secrets
 from dataclasses import dataclass
+from pathlib import Path
+
+DEFAULT_DATABASE_PATH = Path(__file__).resolve().parents[4] / "healthy.db"
+DEFAULT_DATABASE_URL = f"sqlite+pysqlite:///{DEFAULT_DATABASE_PATH}"
 
 
 def _boolean(name: str, default: bool) -> bool:
@@ -44,9 +48,7 @@ class Settings:
             if not explicit_csrf_secret or len(explicit_csrf_secret.encode()) < 32:
                 raise RuntimeError("Production requires a strong HEALTHY_CSRF_SECRET")
 
-        database_url = (
-            explicit_database_url or "postgresql+psycopg://healthy@127.0.0.1:55432/healthy_test"
-        )
+        database_url = explicit_database_url or DEFAULT_DATABASE_URL
         origins = frozenset(
             origin.strip().rstrip("/")
             for origin in (explicit_origins or "http://127.0.0.1:3000,http://localhost:3000").split(

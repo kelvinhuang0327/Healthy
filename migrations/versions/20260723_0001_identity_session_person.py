@@ -4,7 +4,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "20260723_0001"
 down_revision: str | None = None
@@ -15,20 +14,20 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "accounts",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("normalized_email", sa.String(length=320), nullable=False),
         sa.Column("password_hash", sa.Text(), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.CheckConstraint(
@@ -46,15 +45,15 @@ def upgrade() -> None:
 
     op.create_table(
         "sessions",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("account_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("token_hash", sa.String(length=64), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
@@ -71,21 +70,21 @@ def upgrade() -> None:
 
     op.create_table(
         "persons",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("owner_account_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("owner_account_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("display_name", sa.String(length=120), nullable=False),
         sa.Column("relationship", sa.String(length=30), nullable=False),
         sa.Column("is_default", sa.Boolean(), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.CheckConstraint(
@@ -107,6 +106,7 @@ def upgrade() -> None:
         ["owner_account_id"],
         unique=True,
         postgresql_where=sa.text("is_default"),
+        sqlite_where=sa.text("is_default"),
     )
 
 

@@ -4,7 +4,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "20260727_0002"
 down_revision: str | None = "20260723_0001"
@@ -15,8 +14,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "health_metrics",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("person_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("person_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("recorded_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("systolic_bp_mm_hg", sa.Integer(), nullable=True),
         sa.Column("diastolic_bp_mm_hg", sa.Integer(), nullable=True),
@@ -27,7 +26,7 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.CheckConstraint(

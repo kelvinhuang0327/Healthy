@@ -4,7 +4,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "20260729_0003"
 down_revision: str | None = "20260727_0002"
@@ -15,8 +14,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "symptom_logs",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("person_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("person_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("symptom", sa.String(length=120), nullable=False),
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("severity", sa.Integer(), nullable=False),
@@ -25,21 +24,21 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.CheckConstraint(
-            "char_length(symptom) BETWEEN 1 AND 120",
+            "length(symptom) BETWEEN 1 AND 120",
             name="symptom_length",
         ),
-        sa.CheckConstraint("symptom = btrim(symptom)", name="symptom_trimmed"),
+        sa.CheckConstraint("symptom = trim(symptom)", name="symptom_trimmed"),
         sa.CheckConstraint("severity BETWEEN 1 AND 5", name="severity_bounds"),
         sa.CheckConstraint(
             "duration_minutes IS NULL OR duration_minutes >= 1",
             name="duration_minutes_minimum",
         ),
         sa.CheckConstraint(
-            "note IS NULL OR char_length(note) <= 2000",
+            "note IS NULL OR length(note) <= 2000",
             name="note_length",
         ),
         sa.ForeignKeyConstraint(
@@ -56,9 +55,9 @@ def upgrade() -> None:
         "symptom_logs",
         [
             "person_id",
-            sa.text("occurred_at DESC"),
-            sa.text("created_at DESC"),
-            sa.text("id DESC"),
+            "occurred_at",
+            "created_at",
+            "id",
         ],
     )
 

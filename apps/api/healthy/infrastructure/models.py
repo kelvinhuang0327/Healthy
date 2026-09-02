@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
-    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -17,19 +16,20 @@ from sqlalchemy import (
     Text,
     Time,
     UniqueConstraint,
+    Uuid,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import relationship as orm_relationship
 
 from healthy.domain import actions as actions_domain
+from healthy.domain import external_imports as external_imports_domain
 from healthy.domain import metrics as metrics_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reminders as reminders_domain
 from healthy.domain import symptoms as symptoms_domain
-from healthy.infrastructure.database import Base
+from healthy.infrastructure.database import Base, UTCDateTime
 
 
 class Account(Base):
@@ -42,7 +42,7 @@ class Account(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
@@ -50,11 +50,11 @@ class Account(Base):
     password_hash: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
         onupdate=func.now(),
     )
@@ -73,20 +73,21 @@ class SessionRecord(Base):
     __tablename__ = "sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
     account_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("accounts.id", ondelete="CASCADE"),
         index=True,
     )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
     )
 
@@ -105,16 +106,17 @@ class Person(Base):
             "owner_account_id",
             unique=True,
             postgresql_where=text("is_default"),
+            sqlite_where=text("is_default"),
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
     owner_account_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("accounts.id", ondelete="CASCADE"),
         index=True,
     )
@@ -123,11 +125,11 @@ class Person(Base):
     height_cm: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
         onupdate=func.now(),
     )
@@ -198,19 +200,36 @@ class HealthMetric(Base):
             f" AND {metrics_domain.BLOOD_GLUCOSE_MG_DL_MAX}",
             name="blood_glucose_mg_dl_bounds",
         ),
+        CheckConstraint(
+            "source_type IN ('manual', 'external_csv')",
+            name="source_type_allowed",
+        ),
+        CheckConstraint(
+            "(source_type = 'manual' AND source_record_fingerprint IS NULL)"
+            " OR (source_type = 'external_csv'"
+            " AND source_record_fingerprint IS NOT NULL"
+            " AND length(source_record_fingerprint) = 64)",
+            name="source_record_consistent",
+        ),
+        UniqueConstraint(
+            "person_id",
+            "source_type",
+            "source_record_fingerprint",
+            name="uq_health_metrics_person_source_record_fingerprint",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
     person_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("persons.id", ondelete="CASCADE"),
         index=True,
     )
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    recorded_at: Mapped[datetime] = mapped_column(UTCDateTime())
     systolic_bp_mm_hg: Mapped[int | None] = mapped_column(Integer)
     diastolic_bp_mm_hg: Mapped[int | None] = mapped_column(Integer)
     heart_rate_bpm: Mapped[int | None] = mapped_column(Integer)
@@ -219,8 +238,14 @@ class HealthMetric(Base):
     blood_glucose_mg_dl: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
     sleep_hours: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     note: Mapped[str | None] = mapped_column(String(metrics_domain.NOTE_MAX_LENGTH))
+    source_type: Mapped[str] = mapped_column(
+        String(32),
+        default=external_imports_domain.SOURCE_TYPE_MANUAL,
+        server_default=text(f"'{external_imports_domain.SOURCE_TYPE_MANUAL}'"),
+    )
+    source_record_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
     )
 
@@ -229,11 +254,11 @@ class SymptomLog(Base):
     __tablename__ = "symptom_logs"
     __table_args__ = (
         CheckConstraint(
-            f"char_length(symptom) BETWEEN 1 AND {symptoms_domain.SYMPTOM_MAX_LENGTH}",
+            f"length(symptom) BETWEEN 1 AND {symptoms_domain.SYMPTOM_MAX_LENGTH}",
             name="symptom_length",
         ),
         CheckConstraint(
-            "symptom = btrim(symptom)",
+            "symptom = trim(symptom)",
             name="symptom_trimmed",
         ),
         CheckConstraint(
@@ -252,37 +277,38 @@ class SymptomLog(Base):
             name="estimated_duration_days_bounds",
         ),
         CheckConstraint(
-            f"note IS NULL OR char_length(note) <= {symptoms_domain.NOTE_MAX_LENGTH}",
+            f"note IS NULL OR length(note) <= {symptoms_domain.NOTE_MAX_LENGTH}",
             name="note_length",
         ),
         Index(
             "ix_symptom_logs_person_timeline",
             "person_id",
-            text("occurred_at DESC"),
-            text("created_at DESC"),
-            text("id DESC"),
+            "occurred_at",
+            "created_at",
+            "id",
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
     person_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("persons.id", ondelete="CASCADE"),
         index=True,
     )
     symptom: Mapped[str] = mapped_column(String(symptoms_domain.SYMPTOM_MAX_LENGTH))
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    occurred_at: Mapped[datetime] = mapped_column(UTCDateTime())
     severity: Mapped[int] = mapped_column(Integer)
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
     estimated_start_date: Mapped[date | None] = mapped_column(Date)
     estimated_duration_days: Mapped[int | None] = mapped_column(Integer)
     note: Mapped[str | None] = mapped_column(String(symptoms_domain.NOTE_MAX_LENGTH))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
+        default=lambda: datetime.now(UTC),
         server_default=func.now(),
     )
 
@@ -293,10 +319,10 @@ class HealthAction(Base):
     __tablename__ = "health_actions"
     __table_args__ = (
         CheckConstraint(
-            f"char_length(title) BETWEEN 1 AND {actions_domain.TITLE_MAX_LENGTH}",
+            f"length(title) BETWEEN 1 AND {actions_domain.TITLE_MAX_LENGTH}",
             name="title_length",
         ),
-        CheckConstraint("title = btrim(title)", name="title_trimmed"),
+        CheckConstraint("title = trim(title)", name="title_trimmed"),
         CheckConstraint(
             "status IN ('todo', 'done')",
             name="status_allowed",
@@ -307,7 +333,7 @@ class HealthAction(Base):
             name="status_completion_consistent",
         ),
         CheckConstraint(
-            f"description IS NULL OR char_length(description)"
+            f"description IS NULL OR length(description)"
             f" <= {actions_domain.DESCRIPTION_MAX_LENGTH}",
             name="description_length",
         ),
@@ -316,7 +342,7 @@ class HealthAction(Base):
             name="origin_type_allowed",
         ),
         CheckConstraint(
-            "recommendation_fingerprint IS NULL OR char_length(recommendation_fingerprint) = 64",
+            "recommendation_fingerprint IS NULL OR length(recommendation_fingerprint) = 64",
             name="recommendation_fingerprint_length",
         ),
         CheckConstraint(
@@ -349,24 +375,24 @@ class HealthAction(Base):
         Index(
             "ix_health_actions_person_timeline",
             "person_id",
-            text("created_at DESC"),
-            text("id DESC"),
+            "created_at",
+            "id",
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
     person_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("persons.id", ondelete="CASCADE"),
         index=True,
     )
     title: Mapped[str] = mapped_column(String(actions_domain.TITLE_MAX_LENGTH))
     description: Mapped[str | None] = mapped_column(String(actions_domain.DESCRIPTION_MAX_LENGTH))
-    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    due_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     origin_type: Mapped[str] = mapped_column(
         String(32),
         default=actions_domain.HealthActionOriginType.MANUAL,
@@ -377,22 +403,22 @@ class HealthAction(Base):
     recommendation_rule_version: Mapped[str | None] = mapped_column(String(128))
     source_rule_code: Mapped[str | None] = mapped_column(String(128))
     source_evidence_kind: Mapped[str | None] = mapped_column(String(32))
-    source_evidence_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    source_observation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    source_report_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    source_evidence_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_evidence_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    source_observation_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    source_report_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    source_evidence_observed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     status: Mapped[str] = mapped_column(
         String(20),
         default=actions_domain.HealthActionStatus.TODO,
         server_default=text("'todo'"),
     )
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
         onupdate=func.now(),
     )
@@ -421,12 +447,12 @@ class HealthActionReminder(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
     action_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("health_actions.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -435,14 +461,14 @@ class HealthActionReminder(Base):
         nullable=False,
     )
     local_time: Mapped[time] = mapped_column(Time, nullable=False)
-    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    snoozed_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_acknowledged_local_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
         onupdate=func.now(),
     )
@@ -454,33 +480,33 @@ class HealthActionOutcome(Base):
     __tablename__ = "health_action_outcomes"
     __table_args__ = (
         CheckConstraint(
-            f"char_length(note) BETWEEN 1 AND {outcomes_domain.NOTE_MAX_LENGTH}",
+            f"length(note) BETWEEN 1 AND {outcomes_domain.NOTE_MAX_LENGTH}",
             name="note_length",
         ),
-        CheckConstraint("note = btrim(note)", name="note_trimmed"),
+        CheckConstraint("note = trim(note)", name="note_trimmed"),
         Index(
             "ix_health_action_outcomes_action_timeline",
             "action_id",
-            text("observed_at DESC"),
-            text("created_at DESC"),
-            text("id DESC"),
+            "observed_at",
+            "created_at",
+            "id",
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
     action_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("health_actions.id", ondelete="CASCADE"),
         index=True,
     )
     note: Mapped[str] = mapped_column(String(outcomes_domain.NOTE_MAX_LENGTH))
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime())
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
     )
 
@@ -494,41 +520,40 @@ class HealthReportModel(Base):
             "status IN ('pending', 'confirmed')",
             name="ck_health_reports_status",
         ),
-        Index(
-            "uq_health_reports_person_sha256",
+        UniqueConstraint(
             "person_id",
             "canonical_sha256",
-            unique=True,
+            name="uq_health_reports_person_sha256",
         ),
         Index(
             "ix_health_reports_person_timeline",
             "person_id",
-            text("reported_at DESC"),
-            text("created_at DESC"),
-            text("id DESC"),
+            "reported_at",
+            "created_at",
+            "id",
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
     person_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("persons.id", ondelete="CASCADE"),
         index=True,
     )
     schema_version: Mapped[str] = mapped_column(String(64))
     source_name: Mapped[str] = mapped_column(String(128))
-    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reported_at: Mapped[datetime] = mapped_column(UTCDateTime())
     canonical_sha256: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32), default="pending")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
     )
-    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 
     person: Mapped[Person] = orm_relationship(back_populates="health_reports")
     observations: Mapped[list[HealthReportObservationModel]] = orm_relationship(
@@ -545,22 +570,22 @@ class HealthReportObservationModel(Base):
             "ix_health_report_observations_person_code",
             "person_id",
             "code",
-            text("observed_at DESC"),
+            "observed_at",
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
     )
     report_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("health_reports.id", ondelete="CASCADE"),
         index=True,
     )
     person_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("persons.id", ondelete="CASCADE"),
         index=True,
     )
@@ -570,9 +595,9 @@ class HealthReportObservationModel(Base):
     value_text: Mapped[str | None] = mapped_column(Text)
     unit: Mapped[str | None] = mapped_column(String(32))
     reference_range: Mapped[str | None] = mapped_column(String(128))
-    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime())
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        UTCDateTime(),
         server_default=func.now(),
     )
 

@@ -7,7 +7,6 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
 
 from healthy.domain import metrics as metrics_domain
 
@@ -122,6 +121,8 @@ def _decimal_precision_is_valid(value: Decimal, max_digits: int, decimal_places:
     as_tuple = value.copy_abs().normalize().as_tuple()
     digits = as_tuple.digits or (0,)
     exponent = as_tuple.exponent
+    if not isinstance(exponent, int):
+        return False
 
     if exponent >= 0:
         integer_digits = len(digits) + exponent
@@ -204,11 +205,15 @@ def _parse_recorded_at(raw: str, *, row_number: int) -> datetime:
         raise exc
 
     if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
-        _validation_error(row_number=row_number, field=MANDATORY_HEADER, code="TIMESTAMP_REQUIRED_TZ")
+        _validation_error(
+            row_number=row_number, field=MANDATORY_HEADER, code="TIMESTAMP_REQUIRED_TZ"
+        )
 
     normalized_utc = value.astimezone(UTC)
     if normalized_utc > datetime.now(UTC) + metrics_domain.RECORDED_AT_MAX_FUTURE_SKEW:
-        _validation_error(row_number=row_number, field=MANDATORY_HEADER, code="TIMESTAMP_TOO_FUTURE")
+        _validation_error(
+            row_number=row_number, field=MANDATORY_HEADER, code="TIMESTAMP_TOO_FUTURE"
+        )
     return normalized_utc
 
 
@@ -347,7 +352,9 @@ def parse_health_metric_rows(payload: bytes) -> list[ParsedHealthMetricRow]:
             systolic_bp_mm_hg=systolic,
             diastolic_bp_mm_hg=diastolic,
         ):
-            _validation_error(row_number=row_number, field="blood_pressure", code="UNPAIRED_BLOOD_PRESSURE")
+            _validation_error(
+                row_number=row_number, field="blood_pressure", code="UNPAIRED_BLOOD_PRESSURE"
+            )
 
         row = ParsedHealthMetricRow(
             recorded_at=recorded_at,

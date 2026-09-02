@@ -12,22 +12,18 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("health_metrics", sa.Column("sleep_hours", sa.Numeric(4, 2), nullable=True))
-    op.drop_constraint(
-        "at_least_one_value",
-        "health_metrics",
-        type_="check",
-    )
-    op.create_check_constraint(
-        "at_least_one_value",
-        "health_metrics",
-        "systolic_bp_mm_hg IS NOT NULL"
-        " OR diastolic_bp_mm_hg IS NOT NULL"
-        " OR heart_rate_bpm IS NOT NULL"
-        " OR weight_kg IS NOT NULL"
-        " OR blood_glucose_mg_dl IS NOT NULL"
-        " OR sleep_hours IS NOT NULL",
-    )
+    with op.batch_alter_table("health_metrics") as batch_op:
+        batch_op.add_column(sa.Column("sleep_hours", sa.Numeric(4, 2), nullable=True))
+        batch_op.drop_constraint("at_least_one_value", type_="check")
+        batch_op.create_check_constraint(
+            "at_least_one_value",
+            "systolic_bp_mm_hg IS NOT NULL"
+            " OR diastolic_bp_mm_hg IS NOT NULL"
+            " OR heart_rate_bpm IS NOT NULL"
+            " OR weight_kg IS NOT NULL"
+            " OR blood_glucose_mg_dl IS NOT NULL"
+            " OR sleep_hours IS NOT NULL",
+        )
 
 
 def downgrade() -> None:
@@ -42,18 +38,14 @@ def downgrade() -> None:
             "AND blood_glucose_mg_dl IS NULL"
         )
     )
-    op.drop_constraint(
-        "at_least_one_value",
-        "health_metrics",
-        type_="check",
-    )
-    op.create_check_constraint(
-        "at_least_one_value",
-        "health_metrics",
-        "systolic_bp_mm_hg IS NOT NULL"
-        " OR diastolic_bp_mm_hg IS NOT NULL"
-        " OR heart_rate_bpm IS NOT NULL"
-        " OR weight_kg IS NOT NULL"
-        " OR blood_glucose_mg_dl IS NOT NULL",
-    )
-    op.drop_column("health_metrics", "sleep_hours")
+    with op.batch_alter_table("health_metrics") as batch_op:
+        batch_op.drop_constraint("at_least_one_value", type_="check")
+        batch_op.create_check_constraint(
+            "at_least_one_value",
+            "systolic_bp_mm_hg IS NOT NULL"
+            " OR diastolic_bp_mm_hg IS NOT NULL"
+            " OR heart_rate_bpm IS NOT NULL"
+            " OR weight_kg IS NOT NULL"
+            " OR blood_glucose_mg_dl IS NOT NULL",
+        )
+        batch_op.drop_column("sleep_hours")

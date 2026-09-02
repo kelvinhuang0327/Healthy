@@ -4,7 +4,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "20260729_0004"
 down_revision: str | None = "20260729_0003"
@@ -15,8 +14,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "health_actions",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("person_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("person_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("title", sa.String(length=240), nullable=False),
         sa.Column("description", sa.String(length=2000), nullable=True),
         sa.Column("due_at", sa.DateTime(timezone=True), nullable=True),
@@ -30,20 +29,20 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.CheckConstraint(
-            "char_length(title) BETWEEN 1 AND 240",
+            "length(title) BETWEEN 1 AND 240",
             name="title_length",
         ),
-        sa.CheckConstraint("title = btrim(title)", name="title_trimmed"),
+        sa.CheckConstraint("title = trim(title)", name="title_trimmed"),
         sa.CheckConstraint("status IN ('todo', 'done')", name="status_allowed"),
         sa.CheckConstraint(
             "(status = 'todo' AND completed_at IS NULL)"
@@ -51,7 +50,7 @@ def upgrade() -> None:
             name="status_completion_consistent",
         ),
         sa.CheckConstraint(
-            "description IS NULL OR char_length(description) <= 2000",
+            "description IS NULL OR length(description) <= 2000",
             name="description_length",
         ),
         sa.ForeignKeyConstraint(
@@ -68,8 +67,8 @@ def upgrade() -> None:
         "health_actions",
         [
             "person_id",
-            sa.text("created_at DESC"),
-            sa.text("id DESC"),
+            "created_at",
+            "id",
         ],
     )
 

@@ -18,20 +18,6 @@ jobs:
     name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:18.4-alpine
-        env:
-          POSTGRES_DB: healthy_test
-          POSTGRES_USER: healthy
-          POSTGRES_HOST_AUTH_METHOD: trust
-        ports:
-          - 55432:5432
-        options: >-
-          --health-cmd "pg_isready -U healthy -d healthy_test"
-          --health-interval 1s
-          --health-timeout 3s
-          --health-retries 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v7

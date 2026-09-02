@@ -7,8 +7,10 @@ from typing import Any
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, joinedload
 
+from healthy.domain import external_imports as external_imports_domain
 from healthy.domain.actions import HealthActionOriginType, HealthActionStatus
 from healthy.infrastructure.models import (
     HealthAction,
@@ -108,6 +110,53 @@ class HealthMetricRepository:
         )
         database_session.add(metric)
         return metric
+
+    @staticmethod
+    def import_external_rows(
+        database_session: Session,
+        person_id: uuid.UUID,
+        rows: list[external_imports_domain.ParsedHealthMetricRow],
+    ) -> int:
+        if not rows:
+            return 0
+
+        insert = (
+            sqlite_insert
+            if database_session.get_bind().dialect.name == "sqlite"
+            else postgresql_insert
+        )
+        statement = (
+            insert(HealthMetric)
+            .values(
+                [
+                    {
+                        "id": uuid.uuid4(),
+                        "person_id": person_id,
+                        "recorded_at": row.recorded_at,
+                        "systolic_bp_mm_hg": row.systolic_bp_mm_hg,
+                        "diastolic_bp_mm_hg": row.diastolic_bp_mm_hg,
+                        "heart_rate_bpm": row.heart_rate_bpm,
+                        "steps": row.steps,
+                        "weight_kg": row.weight_kg,
+                        "blood_glucose_mg_dl": row.blood_glucose_mg_dl,
+                        "sleep_hours": row.sleep_hours,
+                        "note": row.note,
+                        "source_type": external_imports_domain.SOURCE_TYPE_EXTERNAL_CSV,
+                        "source_record_fingerprint": row.source_record_fingerprint,
+                    }
+                    for row in rows
+                ]
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    HealthMetric.person_id,
+                    HealthMetric.source_type,
+                    HealthMetric.source_record_fingerprint,
+                ]
+            )
+            .returning(HealthMetric.id)
+        )
+        return len(list(database_session.scalars(statement)))
 
     @staticmethod
     def list_for_person(database_session: Session, person_id: uuid.UUID) -> list[HealthMetric]:
@@ -416,8 +465,13 @@ class HealthActionReminderRepository:
         local_time: time,
         updated_at: datetime,
     ) -> HealthActionReminder:
+        insert = (
+            sqlite_insert
+            if database_session.get_bind().dialect.name == "sqlite"
+            else postgresql_insert
+        )
         statement = (
-            postgresql_insert(HealthActionReminder)
+            insert(HealthActionReminder)
             .values(
                 action_id=action_id,
                 timezone_name=timezone_name,

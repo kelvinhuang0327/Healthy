@@ -12,20 +12,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("symptom_logs", sa.Column("estimated_start_date", sa.Date(), nullable=True))
-    op.add_column("symptom_logs", sa.Column("estimated_duration_days", sa.Integer(), nullable=True))
-    op.create_check_constraint(
-        "estimated_duration_days_bounds",
-        "symptom_logs",
-        "estimated_duration_days IS NULL OR estimated_duration_days BETWEEN 1 AND 36500",
-    )
+    with op.batch_alter_table("symptom_logs") as batch_op:
+        batch_op.add_column(sa.Column("estimated_start_date", sa.Date(), nullable=True))
+        batch_op.add_column(sa.Column("estimated_duration_days", sa.Integer(), nullable=True))
+        batch_op.create_check_constraint(
+            "estimated_duration_days_bounds",
+            "estimated_duration_days IS NULL OR estimated_duration_days BETWEEN 1 AND 36500",
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "estimated_duration_days_bounds",
-        "symptom_logs",
-        type_="check",
-    )
-    op.drop_column("symptom_logs", "estimated_duration_days")
-    op.drop_column("symptom_logs", "estimated_start_date")
+    with op.batch_alter_table("symptom_logs") as batch_op:
+        batch_op.drop_constraint("estimated_duration_days_bounds", type_="check")
+        batch_op.drop_column("estimated_duration_days")
+        batch_op.drop_column("estimated_start_date")

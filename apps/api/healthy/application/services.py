@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from healthy.application import health_score_inputs, risk_alert_inputs
+from healthy.application import external_imports, health_score_inputs, risk_alert_inputs
 from healthy.application.analytics import HealthAnalytics, build_health_analytics
 from healthy.application.history import HistoryItem, build_history
 from healthy.domain import action_recommendations as action_recommendations_domain
@@ -22,7 +22,9 @@ from healthy.domain import insights as insights_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reminders as reminders_domain
 from healthy.domain import reports as reports_domain
+from healthy.domain.external_imports import ExternalMetricCsvImportSummary
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
+from healthy.infrastructure.config import Settings
 from healthy.infrastructure.models import (
     Account,
     HealthAction,
@@ -64,6 +66,10 @@ class HealthMetricIntegrityError(Exception):
     pass
 
 
+HealthMetricImportError = external_imports.HealthMetricImportError
+HealthMetricImportIntegrityError = external_imports.HealthMetricImportIntegrityError
+
+
 class SymptomLogIntegrityError(Exception):
     pass
 
@@ -97,6 +103,14 @@ class HealthActionReminderValidationError(Exception):
 
 
 class HealthActionReminderSnoozeError(Exception):
+    pass
+
+
+class NotificationDeliveryCapabilityUnavailableError(Exception):
+    pass
+
+
+class NotificationPreferenceInvalidStateError(Exception):
     pass
 
 
@@ -333,20 +347,23 @@ def import_external_health_metrics_csv(
     person_id: uuid.UUID,
     payload: bytes,
 ) -> external_imports_domain.ExternalMetricCsvImportSummary:
-    rows = external_imports_domain.parse_health_metric_rows(payload)
-    try:
-        inserted_count = HealthMetricRepository.import_external_rows(
-            database_session,
-            person_id,
-            rows,
-        )
-        database_session.commit()
-    except IntegrityError as error:
-        database_session.rollback()
-        raise HealthMetricIntegrityError from error
-    return external_imports_domain.build_import_summary(
-        rows=rows,
-        inserted_count=inserted_count,
+    return import_external_metrics_csv(
+        database_session,
+        person_id=person_id,
+        csv_payload=payload,
+    )
+
+
+def import_external_metrics_csv(
+    database_session: Session,
+    *,
+    person_id: uuid.UUID,
+    csv_payload: bytes,
+) -> ExternalMetricCsvImportSummary:
+    return external_imports.import_external_metrics_csv(
+        database_session,
+        person_id=person_id,
+        csv_payload=csv_payload,
     )
 
 
@@ -683,6 +700,47 @@ def get_health_action_reminder(
     if action is None:
         return None
     return HealthActionReminderRepository.get_for_action(database_session, action.id)
+
+
+def set_health_action_email_notification(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    enabled: bool,
+    email_capability_available: bool,
+    now: datetime | None = None,
+) -> HealthActionReminder | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    action = HealthActionRepository.get_for_person(database_session, person.id, action_id)
+    if action is None:
+        return None
+    reminder = HealthActionReminderRepository.get_for_action(database_session, action.id)
+    if reminder is None:
+        return None
+    if enabled:
+        if action.status != actions_domain.HealthActionStatus.TODO:
+            raise NotificationPreferenceInvalidStateError
+        if not email_capability_available:
+            raise NotificationDeliveryCapabilityUnavailableError
+    if reminder.email_enabled == enabled:
+        return reminder
+    updated_at = reminders_domain.normalize_instant(now or datetime.now(UTC))
+    updated = HealthActionReminderRepository.set_email_enabled(
+        database_session,
+        action.id,
+        email_enabled=enabled,
+        updated_at=updated_at,
+    )
+    database_session.commit()
+    return updated
+
+
+def notification_capability(settings: Settings) -> bool:
+    return settings.email_delivery_available
 
 
 def upsert_health_action_reminder(

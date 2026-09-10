@@ -145,6 +145,7 @@ class HealthMetricCreate(BaseModel):
             Field(
                 ge=metrics_domain.BLOOD_GLUCOSE_MG_DL_MIN,
                 le=metrics_domain.BLOOD_GLUCOSE_MG_DL_MAX,
+                max_digits=metrics_domain.BLOOD_GLUCOSE_MG_DL_MAX_DIGITS,
                 decimal_places=metrics_domain.BLOOD_GLUCOSE_MG_DL_DECIMAL_PLACES,
             ),
         ]
@@ -198,7 +199,17 @@ class HealthMetricSummary(BaseModel):
     blood_glucose_mg_dl: JsonDecimal | None
     sleep_hours: SleepHours | None
     note: str | None
+    source_type: str = "manual"
     created_at: datetime
+
+
+class ExternalMetricCsvImportSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    source_type: Literal["external_csv"] = "external_csv"
+    total_rows: int
+    imported_count: int
+    duplicate_count: int
 
 
 class HealthAnalyticsMetricSummary(BaseModel):
@@ -440,6 +451,12 @@ class HealthActionReminderUpsert(BaseModel):
             raise ValueError("local_time must not include a timezone offset") from error
 
 
+class HealthActionReminderEmailChannelUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
 class HealthActionReminderSnooze(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -460,10 +477,15 @@ class HealthActionReminderSummary(BaseModel):
     action_id: uuid.UUID
     timezone_name: str
     local_time: time
+    email_enabled: bool
     snoozed_until: datetime | None
     last_acknowledged_local_date: date | None
     created_at: datetime
     updated_at: datetime
+
+
+class NotificationCapabilitiesSummary(BaseModel):
+    email_available: bool
 
 
 class DueHealthActionReminderSummary(BaseModel):

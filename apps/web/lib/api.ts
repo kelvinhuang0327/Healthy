@@ -40,7 +40,15 @@ export type HealthMetric = {
   blood_glucose_mg_dl: number | null;
   sleep_hours: number | null;
   note: string | null;
+  source_type: "manual" | "external_csv" | string;
   created_at: string;
+};
+
+export type ExternalMetricCsvImportSummary = {
+  source_type: "external_csv";
+  total_rows: number;
+  imported_count: number;
+  duplicate_count: number;
 };
 
 export type HealthAnalyticsMetric = {
@@ -164,10 +172,15 @@ export type HealthActionReminder = {
   action_id: string;
   timezone_name: string;
   local_time: string;
+  email_enabled: boolean;
   snoozed_until: string | null;
   last_acknowledged_local_date: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type NotificationCapabilities = {
+  email_available: boolean;
 };
 
 export type DueHealthActionReminder = {
@@ -274,7 +287,7 @@ async function request<T>(
 ): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
-  if (init.body) {
+  if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
@@ -291,9 +304,18 @@ async function request<T>(
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      detail?: string;
+      detail?: string | { message?: string; code?: string; row?: number; field?: string };
     } | null;
-    throw new ApiError(body?.detail ?? `Request failed (${response.status})`, response.status);
+    let message = `Request failed (${response.status})`;
+    if (body?.detail) {
+      if (typeof body.detail === "string") {
+        message = body.detail;
+      } else if (typeof body.detail === "object") {
+        const d = body.detail;
+        message = d.message || d.code ? `${d.message || "Error"}${d.code ? ` (${d.code})` : ""}${d.row ? ` at row ${d.row}` : ""}${d.field ? `, field ${d.field}` : ""}` : message;
+      }
+    }
+    throw new ApiError(message, response.status);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -361,6 +383,8 @@ export const api = {
     }),
   session: () => request<SessionSummary>("/session"),
   persons: () => request<Person[]>("/persons"),
+  notificationCapabilities: () =>
+    request<NotificationCapabilities>("/notification-capabilities"),
   person: (personId: string) => request<Person>(`/persons/${personId}`),
   updatePersonHeight: (personId: string, heightCm: number | null) =>
     request<Person>(`/persons/${personId}/profile`, {
@@ -417,6 +441,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  importMetricCsv: (personId: string, csvPayload: string | Blob) =>
+    request<ExternalMetricCsvImportSummary>(
+      `/persons/${personId}/metrics/imports/csv`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/csv",
+        },
+        body: csvPayload,
+      },
+    ),
   symptomLogs: (personId: string) =>
     request<SymptomLog[]>(`/persons/${personId}/symptoms`),
   symptomLog: (personId: string, symptomId: string) =>
@@ -470,6 +505,15 @@ export const api = {
     request<HealthActionReminder>(
       `/persons/${personId}/actions/${actionId}/reminder`,
       { method: "PUT", body: JSON.stringify(payload) },
+    ),
+  setHealthActionEmailNotification: (
+    personId: string,
+    actionId: string,
+    enabled: boolean,
+  ) =>
+    request<HealthActionReminder>(
+      `/persons/${personId}/actions/${actionId}/reminder/channels/email`,
+      { method: "PUT", body: JSON.stringify({ enabled }) },
     ),
   deleteHealthActionReminder: (personId: string, actionId: string) =>
     request<void>(

@@ -4,12 +4,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from healthy.application import services
 from healthy.application.services import AuthenticatedSession
 from healthy.domain import reports as reports_domain
+from healthy.domain.external_imports import HealthMetricCsvImportValidationError
 from healthy.infrastructure.config import Settings
 from healthy.infrastructure.models import Person
 from healthy.presentation.dependencies import (
@@ -31,9 +32,11 @@ from healthy.presentation.schemas import (
     AssistantTodaySummary,
     DailyAttentionItemSummary,
     DueHealthActionReminderSummary,
+    ExternalMetricCsvImportSummary,
     HealthActionCreate,
     HealthActionOutcomeCreate,
     HealthActionOutcomeSummary,
+    HealthActionReminderEmailChannelUpdate,
     HealthActionReminderSnooze,
     HealthActionReminderSummary,
     HealthActionReminderUpsert,
@@ -51,6 +54,7 @@ from healthy.presentation.schemas import (
     HistorySourceSummary,
     InsightEvidenceSummary,
     InsightSummary,
+    NotificationCapabilitiesSummary,
     PersonCreate,
     PersonHeightUpdate,
     PersonSummary,
@@ -213,6 +217,20 @@ def get_persons(
     return [PersonSummary.model_validate(person) for person in persons]
 
 
+@router.get(
+    "/notification-capabilities",
+    response_model=NotificationCapabilitiesSummary,
+)
+def get_notification_capabilities(
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> NotificationCapabilitiesSummary:
+    del authenticated
+    return NotificationCapabilitiesSummary(
+        email_available=services.notification_capability(settings),
+    )
+
+
 @router.post("/persons", response_model=PersonSummary, status_code=status.HTTP_201_CREATED)
 def post_person(
     payload: PersonCreate,
@@ -345,6 +363,58 @@ def get_health_metric(
             detail="Metric not found",
         )
     return HealthMetricSummary.model_validate(metric)
+
+
+@router.post(
+    "/persons/{person_id}/metrics/imports/csv",
+    response_model=ExternalMetricCsvImportSummary,
+    status_code=status.HTTP_200_OK,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "text/csv": {
+                    "schema": {
+                        "type": "string",
+                    },
+                },
+            },
+        },
+    },
+)
+async def post_external_metric_csv_import(
+    person_id: uuid.UUID,
+    request: Request,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> ExternalMetricCsvImportSummary:
+    person = _get_owned_person(person_id, authenticated, database_session)
+    payload = await request.body()
+    try:
+        summary = services.import_external_metrics_csv(
+            database_session,
+            person_id=person.id,
+            csv_payload=payload,
+        )
+    except HealthMetricCsvImportValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "message": "Invalid CSV import payload",
+                "code": error.code,
+                "row": error.row_number,
+                "field": error.field,
+            },
+        ) from error
+    except (
+        services.HealthMetricIntegrityError,
+        services.HealthMetricImportIntegrityError,
+    ) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid request",
+        ) from error
+    return ExternalMetricCsvImportSummary.model_validate(summary)
 
 
 @router.get(
@@ -784,6 +854,45 @@ def get_health_action_reminder(
         person_id=person_id,
         action_id=action.id,
     )
+    if reminder is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reminder not found",
+        )
+    return HealthActionReminderSummary.model_validate(reminder)
+
+
+@router.put(
+    "/persons/{person_id}/actions/{action_id}/reminder/channels/email",
+    response_model=HealthActionReminderSummary,
+)
+def put_health_action_email_notification(
+    person_id: uuid.UUID,
+    action_id: uuid.UUID,
+    payload: HealthActionReminderEmailChannelUpdate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> HealthActionReminderSummary:
+    try:
+        reminder = services.set_health_action_email_notification(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            action_id=action_id,
+            enabled=payload.enabled,
+            email_capability_available=services.notification_capability(settings),
+        )
+    except services.NotificationPreferenceInvalidStateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email reminders require an open action",
+        ) from error
+    except services.NotificationDeliveryCapabilityUnavailableError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email reminders are unavailable",
+        ) from error
     if reminder is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

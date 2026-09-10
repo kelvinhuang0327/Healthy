@@ -26,6 +26,7 @@ from sqlalchemy.orm import relationship as orm_relationship
 from healthy.domain import actions as actions_domain
 from healthy.domain import external_imports as external_imports_domain
 from healthy.domain import metrics as metrics_domain
+from healthy.domain import notifications as notifications_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reminders as reminders_domain
 from healthy.domain import symptoms as symptoms_domain
@@ -211,11 +212,24 @@ class HealthMetric(Base):
             " AND length(source_record_fingerprint) = 64)",
             name="source_record_consistent",
         ),
+        CheckConstraint(
+            "source_record_fingerprint IS NULL OR length(source_record_fingerprint) = 64",
+            name="source_record_fingerprint_length",
+        ),
         UniqueConstraint(
             "person_id",
             "source_type",
             "source_record_fingerprint",
             name="uq_health_metrics_person_source_record_fingerprint",
+        ),
+        Index(
+            "uq_health_metrics_person_source_fingerprint",
+            "person_id",
+            "source_type",
+            "source_record_fingerprint",
+            unique=True,
+            postgresql_where=text("source_record_fingerprint IS NOT NULL"),
+            sqlite_where=text("source_record_fingerprint IS NOT NULL"),
         ),
     )
 
@@ -235,7 +249,7 @@ class HealthMetric(Base):
     heart_rate_bpm: Mapped[int | None] = mapped_column(Integer)
     steps: Mapped[int | None] = mapped_column(Integer)
     weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
-    blood_glucose_mg_dl: Mapped[Decimal | None] = mapped_column(Numeric(5, 1))
+    blood_glucose_mg_dl: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     sleep_hours: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
     note: Mapped[str | None] = mapped_column(String(metrics_domain.NOTE_MAX_LENGTH))
     source_type: Mapped[str] = mapped_column(
@@ -243,7 +257,7 @@ class HealthMetric(Base):
         default=external_imports_domain.SOURCE_TYPE_MANUAL,
         server_default=text(f"'{external_imports_domain.SOURCE_TYPE_MANUAL}'"),
     )
-    source_record_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    source_record_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         server_default=func.now(),
@@ -461,6 +475,12 @@ class HealthActionReminder(Base):
         nullable=False,
     )
     local_time: Mapped[time] = mapped_column(Time, nullable=False)
+    email_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     snoozed_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_acknowledged_local_date: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = mapped_column(
@@ -474,6 +494,100 @@ class HealthActionReminder(Base):
     )
 
     action: Mapped[HealthAction] = orm_relationship(back_populates="reminder")
+    notification_deliveries: Mapped[list[NotificationDelivery]] = orm_relationship(
+        back_populates="reminder",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class NotificationDelivery(Base):
+    __tablename__ = "notification_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('email')",
+            name="channel_allowed",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'sending', 'sent', 'cancelled', 'failed', 'unknown')",
+            name="status_allowed",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="attempt_count_nonnegative",
+        ),
+        CheckConstraint(
+            "status <> 'sent' OR sent_at IS NOT NULL",
+            name="sent_requires_sent_at",
+        ),
+        CheckConstraint(
+            "status <> 'failed' OR failed_at IS NOT NULL",
+            name="failed_requires_failed_at",
+        ),
+        CheckConstraint(
+            "status <> 'sending' OR claimed_at IS NOT NULL",
+            name="sending_requires_claimed_at",
+        ),
+        UniqueConstraint(
+            "reminder_id",
+            "channel",
+            "reminder_local_date",
+            name="uq_notification_deliveries_reminder_channel_local_date",
+        ),
+        Index(
+            "ix_notification_deliveries_status_claimed_at",
+            "status",
+            "claimed_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    reminder_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("health_action_reminders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    channel: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=notifications_domain.NotificationChannel.EMAIL,
+        server_default=text("'email'"),
+    )
+    reminder_local_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=notifications_domain.NotificationDeliveryStatus.PENDING,
+        server_default=text("'pending'"),
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    failed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    failure_code: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    reminder: Mapped[HealthActionReminder] = orm_relationship(
+        back_populates="notification_deliveries",
+    )
 
 
 class HealthActionOutcome(Base):

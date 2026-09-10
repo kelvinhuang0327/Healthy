@@ -43,6 +43,9 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/persons/{person_id}/reports",
         "/v1/persons/{person_id}/reports/{report_id}",
         "/v1/persons/{person_id}/reports/{report_id}/confirm",
+        "/v1/persons/{person_id}/report-intakes",
+        "/v1/persons/{person_id}/report-intakes/{intake_id}",
+        "/v1/persons/{person_id}/report-intakes/{intake_id}/confirm",
         "/v1/persons/{person_id}/assistant/today",
         "/v1/persons/{person_id}/reminders/due",
         "/v1/persons/{person_id}/history",
@@ -101,6 +104,11 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("GET", "/v1/persons/{person_id}/reports"),
         ("GET", "/v1/persons/{person_id}/reports/{report_id}"),
         ("POST", "/v1/persons/{person_id}/reports/{report_id}/confirm"),
+        ("POST", "/v1/persons/{person_id}/report-intakes"),
+        ("GET", "/v1/persons/{person_id}/report-intakes"),
+        ("GET", "/v1/persons/{person_id}/report-intakes/{intake_id}"),
+        ("PATCH", "/v1/persons/{person_id}/report-intakes/{intake_id}"),
+        ("POST", "/v1/persons/{person_id}/report-intakes/{intake_id}/confirm"),
         ("GET", "/v1/persons/{person_id}/assistant/today"),
         ("GET", "/v1/persons/{person_id}/reminders/due"),
         ("GET", "/v1/persons/{person_id}/history"),
@@ -143,6 +151,8 @@ def test_migration_created_required_database_constraints_and_indexes() -> None:
         "health_actions",
         "health_action_outcomes",
         "health_action_reminders",
+        "report_intakes",
+        "report_intake_observations",
     }
     assert {index["name"] for index in inspector.get_indexes("persons")} >= {
         "ix_persons_owner_account_id",
@@ -316,6 +326,59 @@ def test_migration_created_required_database_constraints_and_indexes() -> None:
         "ck_notification_deliveries_sent_requires_sent_at",
         "ck_notification_deliveries_failed_requires_failed_at",
         "ck_notification_deliveries_sending_requires_claimed_at",
+    }
+
+    report_intake_columns = {column["name"] for column in inspector.get_columns("report_intakes")}
+    assert report_intake_columns == {
+        "id",
+        "person_id",
+        "source_filename",
+        "source_name",
+        "file_sha256",
+        "media_type",
+        "extraction_method",
+        "parser_version",
+        "page_count",
+        "extracted_character_count",
+        "status",
+        "pending_review",
+        "reported_at",
+        "error_message",
+        "report_id",
+        "created_at",
+        "updated_at",
+        "confirmed_at",
+    }
+    assert {
+        constraint["name"] for constraint in inspector.get_unique_constraints("report_intakes")
+    } >= {"uq_report_intakes_person_file_sha256"}
+    assert {
+        constraint["name"] for constraint in inspector.get_check_constraints("report_intakes")
+    } >= {
+        "ck_report_intakes_ck_report_intakes_status",
+        "ck_report_intakes_ck_report_intakes_pending_review_consistent",
+        "ck_report_intakes_ck_report_intakes_confirmed_requires_report",
+    }
+    report_intake_foreign_keys = inspector.get_foreign_keys("report_intakes")
+    assert {foreign_key["referred_table"] for foreign_key in report_intake_foreign_keys} == {
+        "health_reports",
+        "persons",
+    }
+    assert {
+        foreign_key["options"].get("ondelete") for foreign_key in report_intake_foreign_keys
+    } == {
+        "CASCADE",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("report_intake_observations")
+    } >= {"uq_report_intake_observations_intake_ordinal"}
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("report_intake_observations")
+    } >= {
+        "ck_report_intake_observations_ck_report_intake_observations_at_least_one_value",
+        "ck_report_intake_observations_ck_report_intake_observations_confidence_bounds",
     }
 
 

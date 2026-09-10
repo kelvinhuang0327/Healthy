@@ -287,7 +287,11 @@ async function request<T>(
 ): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
+  if (
+    init.body &&
+    !(init.body instanceof FormData) &&
+    !headers.has("Content-Type")
+  ) {
     headers.set("Content-Type", "application/json");
   }
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
@@ -304,7 +308,7 @@ async function request<T>(
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      detail?: string | { message?: string; code?: string; row?: number; field?: string };
+    detail?: string | { message?: string; code?: string; row?: number; field?: string };
     } | null;
     let message = `Request failed (${response.status})`;
     if (body?.detail) {
@@ -360,6 +364,57 @@ export type HealthReportDetail = {
   created_at: string;
   confirmed_at: string | null;
   observations: HealthReportObservation[];
+};
+
+export type ReportIntakeObservation = {
+  id: string;
+  intake_id: string;
+  ordinal: number;
+  code: string;
+  display_name: string;
+  value_numeric: number | null;
+  value_text: string | null;
+  unit: string | null;
+  reference_range: string | null;
+  observed_at: string | null;
+  parser_provenance: string;
+  parser_confidence: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReportIntake = {
+  id: string;
+  person_id: string;
+  source_filename: string;
+  source_name: string;
+  file_sha256: string;
+  media_type: string;
+  extraction_method: "digital_pdf" | "ocr_image";
+  parser_metadata: Record<string, number | string | null>;
+  status: "pending_review" | "confirmed" | "failed";
+  pending_review: boolean;
+  reported_at: string | null;
+  error_message: string | null;
+  report_id: string | null;
+  created_at: string;
+  updated_at: string;
+  confirmed_at: string | null;
+};
+
+export type ReportIntakeDetail = ReportIntake & {
+  observations: ReportIntakeObservation[];
+};
+
+export type ReportIntakeObservationEdit = {
+  id?: string;
+  code: string;
+  display_name: string;
+  value_numeric: number | null;
+  value_text: string | null;
+  unit: string | null;
+  reference_range: string | null;
+  observed_at: string | null;
 };
 
 export const api = {
@@ -557,6 +612,41 @@ export const api = {
   confirmReport: (personId: string, reportId: string) =>
     request<HealthReportDetail>(
       `/persons/${personId}/reports/${reportId}/confirm`,
+      { method: "POST" },
+    ),
+  reportIntakes: (personId: string) =>
+    request<ReportIntake[]>(`/persons/${personId}/report-intakes`),
+  reportIntake: (personId: string, intakeId: string) =>
+    request<ReportIntakeDetail>(
+      `/persons/${personId}/report-intakes/${intakeId}`,
+    ),
+  createReportIntake: (personId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<ReportIntakeDetail>(`/persons/${personId}/report-intakes`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  updateReportIntake: (
+    personId: string,
+    intakeId: string,
+    payload: {
+      source_name?: string;
+      reported_at?: string;
+      observations?: ReportIntakeObservationEdit[];
+    },
+  ) =>
+    request<ReportIntakeDetail>(
+      `/persons/${personId}/report-intakes/${intakeId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    ),
+  confirmReportIntake: (personId: string, intakeId: string) =>
+    request<ReportIntakeDetail>(
+      `/persons/${personId}/report-intakes/${intakeId}/confirm`,
       { method: "POST" },
     ),
   assistantToday: (personId: string) =>

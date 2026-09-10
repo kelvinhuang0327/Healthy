@@ -21,6 +21,7 @@ from healthy.domain import health_score as health_score_domain
 from healthy.domain import insights as insights_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reminders as reminders_domain
+from healthy.domain import report_intakes as report_intakes_domain
 from healthy.domain import reports as reports_domain
 from healthy.domain.external_imports import ExternalMetricCsvImportSummary
 from healthy.domain.identity import AccountStatus, PersonRelationship, normalize_email
@@ -34,6 +35,7 @@ from healthy.infrastructure.models import (
     HealthReportModel,
     HealthReportObservationModel,
     Person,
+    ReportIntakeModel,
     SessionRecord,
     SymptomLog,
 )
@@ -44,6 +46,7 @@ from healthy.infrastructure.repositories import (
     HealthMetricRepository,
     HealthReportRepository,
     PersonRepository,
+    ReportIntakeRepository,
     SymptomLogRepository,
 )
 from healthy.infrastructure.security import (
@@ -115,6 +118,22 @@ class NotificationPreferenceInvalidStateError(Exception):
 
 
 class HealthReportIntegrityError(Exception):
+    pass
+
+
+class ReportIntakeIntegrityError(Exception):
+    pass
+
+
+class ReportIntakeInvalidStateError(Exception):
+    pass
+
+
+class ReportIntakeNoObservationsError(Exception):
+    pass
+
+
+class ReportIntakeValidationError(Exception):
     pass
 
 
@@ -1345,3 +1364,287 @@ def confirm_health_report(
     confirmed_report = HealthReportRepository.confirm_report(database_session, report, now)
     database_session.commit()
     return confirmed_report
+
+
+def create_report_intake(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    filename: str | None,
+    media_type: str | None,
+    file_bytes: bytes,
+    now: datetime,
+) -> tuple[ReportIntakeModel, bool] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+
+    normalized_media_type, extraction_method = report_intakes_domain.validate_upload(
+        filename=filename,
+        media_type=media_type,
+        file_bytes=file_bytes,
+    )
+    clean_filename = report_intakes_domain.sanitize_filename(filename)
+    fallback_source_name = report_intakes_domain.source_name_from_filename(clean_filename)
+    file_sha256 = report_intakes_domain.sha256_for_bytes(file_bytes)
+    existing = ReportIntakeRepository.find_by_file_sha256(
+        database_session,
+        person.id,
+        file_sha256,
+    )
+    if existing is not None:
+        return existing, True
+
+    now_utc = now.astimezone(UTC)
+    try:
+        parsed = report_intakes_domain.extract_and_parse(
+            filename=clean_filename,
+            media_type=normalized_media_type,
+            file_bytes=file_bytes,
+        )
+    except report_intakes_domain.ReportIntakeParserError as error:
+        try:
+            intake = ReportIntakeRepository.create_failed_intake(
+                database_session,
+                person.id,
+                source_filename=clean_filename,
+                source_name=fallback_source_name,
+                file_sha256=file_sha256,
+                media_type=normalized_media_type,
+                extraction_method=extraction_method,
+                parser_version=report_intakes_domain.PARSER_VERSION,
+                error_message=str(error),
+                created_at=now_utc,
+            )
+            database_session.commit()
+        except IntegrityError as integrity_error:
+            database_session.rollback()
+            existing = ReportIntakeRepository.find_by_file_sha256(
+                database_session,
+                person.id,
+                file_sha256,
+            )
+            if existing is not None:
+                return existing, True
+            raise ReportIntakeIntegrityError(
+                "Failed to store the report intake."
+            ) from integrity_error
+        return intake, False
+
+    observations = [
+        {
+            "code": observation.code,
+            "display_name": observation.display_name,
+            "value_numeric": observation.value_numeric,
+            "value_text": observation.value_text,
+            "unit": observation.unit,
+            "reference_range": observation.reference_range,
+            "observed_at": observation.observed_at,
+            "parser_provenance": observation.parser_provenance,
+            "parser_confidence": observation.parser_confidence,
+        }
+        for observation in parsed.observations
+    ]
+    parsed_source_name = report_intakes_domain.sanitize_source_name(parsed.source_name)
+    if not parsed_source_name:
+        parsed_source_name = fallback_source_name
+    try:
+        intake = ReportIntakeRepository.create_intake(
+            database_session,
+            person.id,
+            source_filename=clean_filename,
+            source_name=parsed_source_name,
+            file_sha256=file_sha256,
+            media_type=normalized_media_type,
+            extraction_method=parsed.extraction_method,
+            parser_version=report_intakes_domain.PARSER_VERSION,
+            page_count=parsed.page_count,
+            extracted_character_count=parsed.extracted_character_count,
+            status="pending_review",
+            pending_review=True,
+            reported_at=parsed.reported_at,
+            error_message=None,
+            created_at=now_utc,
+            observations=observations,
+        )
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        existing = ReportIntakeRepository.find_by_file_sha256(
+            database_session,
+            person.id,
+            file_sha256,
+        )
+        if existing is not None:
+            return existing, True
+        raise ReportIntakeIntegrityError("Failed to store the report intake.") from error
+    return intake, False
+
+
+def list_report_intakes(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+) -> list[ReportIntakeModel] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    return ReportIntakeRepository.list_for_person(database_session, person.id)
+
+
+def get_report_intake(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    intake_id: uuid.UUID,
+) -> ReportIntakeModel | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    return ReportIntakeRepository.get_for_person(database_session, person.id, intake_id)
+
+
+def update_report_intake(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    intake_id: uuid.UUID,
+    source_name: str | None,
+    reported_at: datetime | None,
+    observations: list[dict[str, Any]] | None,
+    now: datetime,
+) -> ReportIntakeModel | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    intake = ReportIntakeRepository.get_for_person(database_session, person.id, intake_id)
+    if intake is None:
+        return None
+    if intake.status != "pending_review":
+        raise ReportIntakeInvalidStateError("Only pending report intakes can be edited.")
+    clean_source_name = (
+        None if source_name is None else report_intakes_domain.sanitize_source_name(source_name)
+    )
+    if source_name is not None and not clean_source_name:
+        raise ReportIntakeValidationError("A report source must contain visible characters.")
+    try:
+        updated = ReportIntakeRepository.update_pending(
+            database_session,
+            intake,
+            source_name=clean_source_name,
+            reported_at=reported_at,
+            observations=observations,
+            updated_at=now.astimezone(UTC),
+        )
+        database_session.commit()
+    except (IntegrityError, ValueError) as error:
+        database_session.rollback()
+        if isinstance(error, ValueError):
+            raise ReportIntakeValidationError("The intake review data is invalid.") from error
+        raise ReportIntakeIntegrityError("Failed to update the report intake.") from error
+    return updated
+
+
+def _canonical_payload_for_intake(intake: ReportIntakeModel) -> dict[str, Any]:
+    if intake.reported_at is None:
+        raise ReportIntakeValidationError("A report date is required before confirmation.")
+    if not intake.source_name.strip():
+        raise ReportIntakeValidationError("A report source is required before confirmation.")
+    if not intake.observations:
+        raise ReportIntakeNoObservationsError(
+            "At least one observation is required before confirmation."
+        )
+
+    observations: list[dict[str, Any]] = []
+    for observation in intake.observations:
+        if observation.value_numeric is None and not (observation.value_text or "").strip():
+            raise ReportIntakeValidationError("Every observation must have a value.")
+        observed_at = observation.observed_at or intake.reported_at
+        observation_payload: dict[str, Any] = {
+            "code": observation.code,
+            "display_name": observation.display_name,
+            "observed_at": observed_at.isoformat(),
+        }
+        if observation.value_numeric is not None:
+            observation_payload["value_numeric"] = float(observation.value_numeric)
+        if observation.value_text is not None:
+            observation_payload["value_text"] = observation.value_text
+        if observation.unit is not None:
+            observation_payload["unit"] = observation.unit
+        if observation.reference_range is not None:
+            observation_payload["reference_range"] = observation.reference_range
+        observations.append(observation_payload)
+
+    return {
+        "schema_version": reports_domain.SCHEMA_VERSION_V1,
+        "source_name": intake.source_name,
+        "reported_at": intake.reported_at.isoformat(),
+        "observations": observations,
+    }
+
+
+def confirm_report_intake(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    intake_id: uuid.UUID,
+    now: datetime,
+) -> tuple[ReportIntakeModel, HealthReportModel] | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    intake = ReportIntakeRepository.get_for_person(database_session, person.id, intake_id)
+    if intake is None:
+        return None
+
+    if intake.status == "confirmed":
+        if intake.report_id is None:
+            raise ReportIntakeIntegrityError("Confirmed intake is missing its report.")
+        report = HealthReportRepository.get_for_person(
+            database_session,
+            person.id,
+            intake.report_id,
+        )
+        if report is None:
+            raise ReportIntakeIntegrityError("Confirmed intake report could not be found.")
+        return intake, report
+    if intake.status != "pending_review":
+        raise ReportIntakeInvalidStateError("Only pending report intakes can be confirmed.")
+
+    payload = _canonical_payload_for_intake(intake)
+    try:
+        result = import_health_report(
+            database_session,
+            owner_account_id=owner_account_id,
+            person_id=person.id,
+            raw_data=payload,
+        )
+        if result is None:
+            raise ReportIntakeIntegrityError("Person not found while confirming the intake.")
+        report, _is_duplicate = result
+        confirmed_at = now.astimezone(UTC)
+        HealthReportRepository.confirm_report(database_session, report, confirmed_at)
+        ReportIntakeRepository.mark_confirmed(
+            database_session,
+            intake,
+            report_id=report.id,
+            confirmed_at=confirmed_at,
+        )
+        database_session.commit()
+    except reports_domain.InvalidReportSchemaError as error:
+        database_session.rollback()
+        raise ReportIntakeValidationError(
+            "The reviewed observations failed report validation."
+        ) from error
+    except HealthReportIntegrityError as error:
+        database_session.rollback()
+        raise ReportIntakeIntegrityError("The canonical report could not be stored.") from error
+    except IntegrityError as error:
+        database_session.rollback()
+        raise ReportIntakeIntegrityError("The canonical report could not be stored.") from error
+    return intake, report

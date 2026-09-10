@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from healthy.domain import external_imports as external_imports_domain
 from healthy.domain.actions import HealthActionOriginType, HealthActionStatus
@@ -29,6 +29,8 @@ from healthy.infrastructure.models import (
     HealthReportObservationModel,
     NotificationDelivery,
     Person,
+    ReportIntakeModel,
+    ReportIntakeObservationModel,
     SymptomLog,
 )
 
@@ -1043,3 +1045,226 @@ class HealthReportRepository:
             .where(HealthReportModel.person_id == person_id)
         )
         return database_session.scalar(statement) or 0
+
+
+class ReportIntakeRepository:
+    @staticmethod
+    def find_by_file_sha256(
+        database_session: Session,
+        person_id: uuid.UUID,
+        file_sha256: str,
+    ) -> ReportIntakeModel | None:
+        statement = (
+            select(ReportIntakeModel)
+            .where(
+                ReportIntakeModel.person_id == person_id,
+                ReportIntakeModel.file_sha256 == file_sha256,
+            )
+            .options(selectinload(ReportIntakeModel.observations))
+        )
+        return database_session.scalar(statement)
+
+    @staticmethod
+    def create_intake(
+        database_session: Session,
+        person_id: uuid.UUID,
+        *,
+        source_filename: str,
+        source_name: str,
+        file_sha256: str,
+        media_type: str,
+        extraction_method: str,
+        parser_version: str,
+        page_count: int | None,
+        extracted_character_count: int | None,
+        status: str,
+        pending_review: bool,
+        reported_at: datetime | None,
+        error_message: str | None,
+        created_at: datetime,
+        observations: list[dict[str, Any]],
+    ) -> ReportIntakeModel:
+        intake = ReportIntakeModel(
+            person_id=person_id,
+            source_filename=source_filename,
+            source_name=source_name,
+            file_sha256=file_sha256,
+            media_type=media_type,
+            extraction_method=extraction_method,
+            parser_version=parser_version,
+            page_count=page_count,
+            extracted_character_count=extracted_character_count,
+            status=status,
+            pending_review=pending_review,
+            reported_at=reported_at,
+            error_message=error_message,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+        database_session.add(intake)
+        database_session.flush()
+        for ordinal, observation_data in enumerate(observations):
+            database_session.add(
+                ReportIntakeObservationModel(
+                    intake_id=intake.id,
+                    ordinal=ordinal,
+                    code=observation_data["code"],
+                    display_name=observation_data["display_name"],
+                    value_numeric=observation_data.get("value_numeric"),
+                    value_text=observation_data.get("value_text"),
+                    unit=observation_data.get("unit"),
+                    reference_range=observation_data.get("reference_range"),
+                    observed_at=observation_data.get("observed_at"),
+                    parser_provenance=observation_data["parser_provenance"],
+                    parser_confidence=observation_data.get("parser_confidence"),
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+        database_session.flush()
+        return intake
+
+    @staticmethod
+    def create_failed_intake(
+        database_session: Session,
+        person_id: uuid.UUID,
+        *,
+        source_filename: str,
+        source_name: str,
+        file_sha256: str,
+        media_type: str,
+        extraction_method: str,
+        parser_version: str,
+        error_message: str,
+        created_at: datetime,
+    ) -> ReportIntakeModel:
+        return ReportIntakeRepository.create_intake(
+            database_session,
+            person_id,
+            source_filename=source_filename,
+            source_name=source_name,
+            file_sha256=file_sha256,
+            media_type=media_type,
+            extraction_method=extraction_method,
+            parser_version=parser_version,
+            page_count=None,
+            extracted_character_count=None,
+            status="failed",
+            pending_review=False,
+            reported_at=None,
+            error_message=error_message,
+            created_at=created_at,
+            observations=[],
+        )
+
+    @staticmethod
+    def list_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+    ) -> list[ReportIntakeModel]:
+        statement = (
+            select(ReportIntakeModel)
+            .where(ReportIntakeModel.person_id == person_id)
+            .options(selectinload(ReportIntakeModel.observations))
+            .order_by(ReportIntakeModel.created_at.desc(), ReportIntakeModel.id.desc())
+        )
+        return list(database_session.scalars(statement))
+
+    @staticmethod
+    def get_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        intake_id: uuid.UUID,
+    ) -> ReportIntakeModel | None:
+        statement = (
+            select(ReportIntakeModel)
+            .where(
+                ReportIntakeModel.id == intake_id,
+                ReportIntakeModel.person_id == person_id,
+            )
+            .options(selectinload(ReportIntakeModel.observations))
+        )
+        return database_session.scalar(statement)
+
+    @staticmethod
+    def update_pending(
+        database_session: Session,
+        intake: ReportIntakeModel,
+        *,
+        source_name: str | None,
+        reported_at: datetime | None,
+        observations: list[dict[str, Any]] | None,
+        updated_at: datetime,
+    ) -> ReportIntakeModel:
+        if intake.status != "pending_review":
+            raise ValueError("Only pending report intakes can be edited.")
+        if source_name is not None:
+            intake.source_name = source_name
+        if reported_at is not None:
+            intake.reported_at = reported_at
+        if observations is not None:
+            existing = {observation.id: observation for observation in intake.observations}
+            incoming_ids = {
+                observation_data["id"]
+                for observation_data in observations
+                if observation_data.get("id") is not None
+            }
+            if not incoming_ids.issubset(existing):
+                raise ValueError("An intake observation does not belong to this intake.")
+            for observation in list(intake.observations):
+                if observation.id not in incoming_ids:
+                    database_session.delete(observation)
+            database_session.flush()
+
+            ordered_observations: list[ReportIntakeObservationModel] = []
+            for ordinal, observation_data in enumerate(observations):
+                observation_id = observation_data.get("id")
+                observation = (
+                    existing[observation_id]
+                    if observation_id is not None
+                    else ReportIntakeObservationModel(
+                        intake_id=intake.id,
+                        ordinal=-(ordinal + 1),
+                        parser_provenance="human_added",
+                        parser_confidence=None,
+                        created_at=updated_at,
+                        updated_at=updated_at,
+                    )
+                )
+                observation.ordinal = -(ordinal + 1)
+                observation.code = observation_data["code"]
+                observation.display_name = observation_data["display_name"]
+                observation.value_numeric = observation_data.get("value_numeric")
+                observation.value_text = observation_data.get("value_text")
+                observation.unit = observation_data.get("unit")
+                observation.reference_range = observation_data.get("reference_range")
+                observation.observed_at = observation_data.get("observed_at")
+                observation.updated_at = updated_at
+                if observation_id is None:
+                    intake.observations.append(observation)
+                ordered_observations.append(observation)
+
+            database_session.flush()
+            for ordinal, observation in enumerate(ordered_observations):
+                observation.ordinal = ordinal
+
+        intake.updated_at = updated_at
+        database_session.flush()
+        database_session.expire(intake, ["observations"])
+        return intake
+
+    @staticmethod
+    def mark_confirmed(
+        database_session: Session,
+        intake: ReportIntakeModel,
+        *,
+        report_id: uuid.UUID,
+        confirmed_at: datetime,
+    ) -> ReportIntakeModel:
+        intake.status = "confirmed"
+        intake.pending_review = False
+        intake.report_id = report_id
+        intake.confirmed_at = confirmed_at
+        intake.updated_at = confirmed_at
+        database_session.add(intake)
+        return intake

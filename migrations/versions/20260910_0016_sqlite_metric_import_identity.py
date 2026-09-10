@@ -2,7 +2,8 @@
 
 from collections.abc import Sequence
 
-from alembic import op
+import sqlalchemy as sa
+from alembic import context, op
 
 revision: str = "20260910_0016"
 down_revision: str | None = "20260820_0015"
@@ -35,7 +36,28 @@ def upgrade() -> None:
         )
 
 
+def _assert_precision_downgrade_safe() -> None:
+    precision_loss = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                "SELECT 1 "
+                "FROM health_metrics "
+                "WHERE blood_glucose_mg_dl IS NOT NULL "
+                "AND MOD(blood_glucose_mg_dl * 10, 1) <> 0 "
+                "LIMIT 1"
+            )
+        )
+        .scalar_one_or_none()
+    )
+    if precision_loss is not None:
+        raise RuntimeError("BLOOD_GLUCOSE_DOWNGRADE_PRECISION_LOSS")
+
+
 def downgrade() -> None:
+    if context.get_revision_argument() != down_revision:
+        _assert_precision_downgrade_safe()
+
     with op.batch_alter_table("health_metrics", recreate="always") as batch_op:
         batch_op.drop_constraint(
             "uq_health_metrics_person_source_record_fingerprint",

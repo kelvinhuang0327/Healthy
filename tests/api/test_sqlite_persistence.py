@@ -74,6 +74,66 @@ def test_fresh_sqlite_database_upgrades_to_head(
     database.engine.dispose()
 
 
+def test_sqlite_precision_loss_downgrade_preserves_head_schema(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "precision-loss.db"
+    database_url = f"sqlite+pysqlite:///{database_path}"
+    monkeypatch.setenv("HEALTHY_DATABASE_URL", database_url)
+    alembic_config = Config(str(ROOT / "migrations" / "alembic.ini"))
+    alembic_config.set_main_option("script_location", str(ROOT / "migrations"))
+
+    command.upgrade(alembic_config, "head")
+
+    database = Database(database_url)
+    account_id = uuid4()
+    person_id = uuid4()
+    with database.engine.begin() as connection:
+        connection.execute(
+            Account.__table__.insert().values(
+                id=account_id,
+                normalized_email="precision-loss@example.com",
+                password_hash="test-hash",
+                status="active",
+            )
+        )
+        connection.execute(
+            Person.__table__.insert().values(
+                id=person_id,
+                owner_account_id=account_id,
+                display_name="Precision Loss",
+                relationship="self",
+                is_default=True,
+            )
+        )
+        connection.execute(
+            HealthMetric.__table__.insert().values(
+                id=uuid4(),
+                person_id=person_id,
+                recorded_at=datetime(2026, 8, 1, 8, 0, tzinfo=UTC),
+                blood_glucose_mg_dl=Decimal("95.55"),
+                source_type="external_csv",
+                source_record_fingerprint="a" * 64,
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="BLOOD_GLUCOSE_DOWNGRADE_PRECISION_LOSS"):
+        command.downgrade(alembic_config, "20260818_0014")
+
+    with database.engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
+            "20260910_0016"
+        )
+        table_sql = connection.scalar(
+            text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'health_metrics'")
+        )
+        assert table_sql is not None
+        assert "source_record_consistent" in table_sql
+        assert "uq_health_metrics_person_source_record_fingerprint" in table_sql
+    database.engine.dispose()
+
+
 def test_sqlite_foreign_keys_reject_orphans_and_cascade_account_delete(
     client: TestClient,
 ) -> None:

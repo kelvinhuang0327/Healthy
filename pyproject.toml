@@ -7,9 +7,13 @@ dependencies = [
   "alembic==1.18.5",
   "email-validator==2.3.0",
   "fastapi==0.139.2",
+  "pillow==12.3.0",
   "psycopg[binary]==3.3.4",
   "pwdlib[argon2]==0.3.0",
   "pydantic==2.13.4",
+  "pypdf==6.18.0",
+  "pytesseract==0.3.13",
+  "python-multipart==0.0.32",
   "sqlalchemy==2.0.51",
   "uvicorn==0.51.0",
 ]

@@ -20,6 +20,7 @@ from healthy.domain import actions as actions_domain
 from healthy.domain import metrics as metrics_domain
 from healthy.domain import outcomes as outcomes_domain
 from healthy.domain import reminders as reminders_domain
+from healthy.domain import report_intakes as report_intakes_domain
 from healthy.domain import symptoms as symptoms_domain
 from healthy.domain.identity import PersonRelationship
 
@@ -638,3 +639,142 @@ class HealthReportDetail(BaseModel):
     created_at: datetime
     confirmed_at: datetime | None
     observations: list[HealthReportObservationSummary]
+
+
+class ReportIntakeObservationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: uuid.UUID | None = None
+    code: str = Field(min_length=1, max_length=64)
+    display_name: str = Field(min_length=1, max_length=128)
+    value_numeric: JsonDecimal | None = None
+    value_text: str | None = Field(default=None, max_length=2000)
+    unit: str | None = Field(default=None, max_length=32)
+    reference_range: str | None = Field(default=None, max_length=128)
+    observed_at: datetime | None = None
+
+    @field_validator("code")
+    @classmethod
+    def _normalize_code(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not normalized:
+            raise ValueError("code must not be blank")
+        return normalized
+
+    @field_validator("display_name")
+    @classmethod
+    def _normalize_display_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("display_name must not be blank")
+        return normalized
+
+    @field_validator("value_numeric")
+    @classmethod
+    def _validate_value_numeric(cls, value: Decimal | None) -> Decimal | None:
+        if value is not None and not value.is_finite():
+            raise ValueError("value_numeric must be finite")
+        return value
+
+    @field_validator("value_text", "unit", "reference_range")
+    @classmethod
+    def _normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("observed_at")
+    @classmethod
+    def _normalize_observed_at(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("observed_at must include timezone information")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def _validate_value_presence(self) -> ReportIntakeObservationUpdate:
+        if self.value_numeric is None and self.value_text is None:
+            raise ValueError("At least one observation value is required")
+        return self
+
+
+class ReportIntakeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_name: str | None = Field(default=None, min_length=1, max_length=128)
+    reported_at: datetime | None = None
+    observations: list[ReportIntakeObservationUpdate] | None = Field(
+        default=None,
+        max_length=100,
+    )
+
+    @field_validator("source_name")
+    @classmethod
+    def _normalize_source_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = report_intakes_domain.sanitize_source_name(value)
+        if not normalized:
+            raise ValueError("source_name must contain visible characters")
+        return normalized
+
+    @field_validator("reported_at")
+    @classmethod
+    def _normalize_reported_at(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("reported_at must include timezone information")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def _validate_patch_fields(self) -> ReportIntakeUpdate:
+        if not self.model_fields_set:
+            raise ValueError("At least one intake field is required")
+        return self
+
+
+class ReportIntakeObservationSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    intake_id: uuid.UUID
+    ordinal: int
+    code: str
+    display_name: str
+    value_numeric: JsonDecimal | None
+    value_text: str | None
+    unit: str | None
+    reference_range: str | None
+    observed_at: datetime | None
+    parser_provenance: str
+    parser_confidence: JsonDecimal | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReportIntakeSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    person_id: uuid.UUID
+    source_filename: str
+    source_name: str
+    file_sha256: str
+    media_type: str
+    extraction_method: Literal["digital_pdf", "ocr_image"]
+    parser_metadata: dict[str, int | str | None]
+    status: report_intakes_domain.ReportIntakeStatus
+    pending_review: bool
+    reported_at: datetime | None
+    error_message: str | None
+    report_id: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
+    confirmed_at: datetime | None
+
+
+class ReportIntakeDetail(ReportIntakeSummary):
+    observations: list[ReportIntakeObservationSummary]

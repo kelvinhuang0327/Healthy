@@ -1,14 +1,27 @@
 from __future__ import annotations
 
+import mimetypes
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from healthy.application import services
 from healthy.application.services import AuthenticatedSession
+from healthy.domain import report_intakes as report_intakes_domain
 from healthy.domain import reports as reports_domain
 from healthy.domain.external_imports import HealthMetricCsvImportValidationError
 from healthy.infrastructure.config import Settings
@@ -59,6 +72,9 @@ from healthy.presentation.schemas import (
     PersonHeightUpdate,
     PersonSummary,
     RegistrationResponse,
+    ReportIntakeDetail,
+    ReportIntakeSummary,
+    ReportIntakeUpdate,
     RiskAlertEvidenceSummary,
     RiskAlertsSummary,
     RiskAlertSummary,
@@ -69,6 +85,10 @@ from healthy.presentation.schemas import (
 )
 
 router = APIRouter(prefix="/v1")
+
+
+def _report_intake_detail(intake: Any) -> ReportIntakeDetail:
+    return ReportIntakeDetail.model_validate(intake)
 
 
 def _session_summary(issued: services.IssuedSession) -> SessionSummary:
@@ -1273,6 +1293,207 @@ def get_health_analytics(
             for summary in result.summaries
         ],
     )
+
+
+@router.post(
+    "/persons/{person_id}/report-intakes",
+    response_model=ReportIntakeDetail,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_origin)],
+)
+async def upload_report_intake(
+    person_id: uuid.UUID,
+    file: Annotated[UploadFile, File(...)],
+    response: Response,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> ReportIntakeDetail:
+    filename = file.filename
+    media_type = file.content_type or mimetypes.guess_type(filename or "")[0]
+    try:
+        file_bytes = await file.read(report_intakes_domain.MAX_UPLOAD_BYTES + 1)
+        try:
+            result = services.create_report_intake(
+                database_session,
+                owner_account_id=authenticated.account.id,
+                person_id=person_id,
+                filename=filename,
+                media_type=media_type,
+                file_bytes=file_bytes,
+                now=datetime.now(UTC),
+            )
+        except report_intakes_domain.ReportIntakeTooLargeError as error:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=str(error),
+            ) from error
+        except report_intakes_domain.ReportIntakeUnsupportedTypeError as error:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=str(error),
+            ) from error
+        except services.ReportIntakeIntegrityError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="The report intake could not be stored.",
+            ) from error
+    finally:
+        await file.close()
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    intake, is_duplicate = result
+    if is_duplicate:
+        response.status_code = status.HTTP_200_OK
+    return _report_intake_detail(intake)
+
+
+@router.get(
+    "/persons/{person_id}/report-intakes",
+    response_model=list[ReportIntakeSummary],
+)
+def list_report_intakes(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> list[ReportIntakeSummary]:
+    intakes = services.list_report_intakes(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+    )
+    if intakes is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Person not found",
+        )
+    return [ReportIntakeSummary.model_validate(intake) for intake in intakes]
+
+
+@router.get(
+    "/persons/{person_id}/report-intakes/{intake_id}",
+    response_model=ReportIntakeDetail,
+)
+def get_report_intake(
+    person_id: uuid.UUID,
+    intake_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> ReportIntakeDetail:
+    intake = services.get_report_intake(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        intake_id=intake_id,
+    )
+    if intake is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report intake not found",
+        )
+    return _report_intake_detail(intake)
+
+
+@router.patch(
+    "/persons/{person_id}/report-intakes/{intake_id}",
+    response_model=ReportIntakeDetail,
+    dependencies=[Depends(require_origin)],
+)
+def patch_report_intake(
+    person_id: uuid.UUID,
+    intake_id: uuid.UUID,
+    payload: ReportIntakeUpdate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> ReportIntakeDetail:
+    observations = (
+        None
+        if payload.observations is None
+        else [observation.model_dump() for observation in payload.observations]
+    )
+    try:
+        intake = services.update_report_intake(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            intake_id=intake_id,
+            source_name=payload.source_name,
+            reported_at=payload.reported_at,
+            observations=observations,
+            now=datetime.now(UTC),
+        )
+    except services.ReportIntakeInvalidStateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending report intakes can be edited.",
+        ) from error
+    except services.ReportIntakeValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+    except services.ReportIntakeIntegrityError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="The report intake could not be updated.",
+        ) from error
+    if intake is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report intake not found",
+        )
+    return _report_intake_detail(intake)
+
+
+@router.post(
+    "/persons/{person_id}/report-intakes/{intake_id}/confirm",
+    response_model=ReportIntakeDetail,
+    dependencies=[Depends(require_origin)],
+)
+def confirm_report_intake(
+    person_id: uuid.UUID,
+    intake_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> ReportIntakeDetail:
+    try:
+        result = services.confirm_report_intake(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            intake_id=intake_id,
+            now=datetime.now(UTC),
+        )
+    except services.ReportIntakeInvalidStateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending report intakes can be confirmed.",
+        ) from error
+    except services.ReportIntakeNoObservationsError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+    except services.ReportIntakeValidationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(error),
+        ) from error
+    except services.ReportIntakeIntegrityError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="The canonical report could not be confirmed.",
+        ) from error
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report intake not found",
+        )
+    intake, _report = result
+    return _report_intake_detail(intake)
 
 
 @router.post(

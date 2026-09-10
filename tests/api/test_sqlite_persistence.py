@@ -57,11 +57,13 @@ def test_fresh_sqlite_database_upgrades_to_head(
         "health_reports",
         "health_report_observations",
         "health_action_reminders",
+        "report_intakes",
+        "report_intake_observations",
     }
     with database.engine.connect() as connection:
         assert connection.scalar(text("PRAGMA foreign_keys")) == 1
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "20260910_0016"
+            "20260910_0017"
         )
         partial_index_sql = connection.scalar(
             text(

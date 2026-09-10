@@ -345,3 +345,213 @@ button.secondary {
 .import-summary p {
   margin: 0;
 }
+
+.reports-page {
+  display: grid;
+  gap: 18px;
+}
+
+.reports-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.reports-toolbar label {
+  min-width: min(100%, 320px);
+}
+
+.report-upload-card form {
+  align-items: start;
+}
+
+.report-upload-card input[type="file"] {
+  padding: 9px;
+}
+
+.report-section-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.report-section-heading h2 {
+  margin: 10px 0 0;
+}
+
+.report-intake-list {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-intake-card {
+  border: 1px solid #d7e5df;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.report-intake-card p {
+  margin: 8px 0 0;
+  color: #4b6a61;
+  font-size: 0.9rem;
+}
+
+.report-intake-select {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.report-intake-select > span:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.report-intake-select small {
+  overflow: hidden;
+  color: #4b6a61;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-intake-pending_review {
+  border-color: #d7b96a;
+  background: #fffdf5;
+}
+
+.report-intake-confirmed {
+  border-color: #9cc9b8;
+  background: #f7fcf9;
+}
+
+.report-intake-failed {
+  border-color: #e0aaa3;
+  background: #fff9f8;
+}
+
+.review-warning {
+  border-left: 4px solid #d7b96a;
+  border-radius: 4px;
+  background: #fff8df;
+  padding: 12px 14px;
+  color: #684d00;
+  line-height: 1.5;
+}
+
+.report-review-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-table-wrap {
+  overflow-x: auto;
+}
+
+.report-observations {
+  width: 100%;
+  min-width: 1020px;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+
+.report-observations th,
+.report-observations td {
+  border-bottom: 1px solid #d7e5df;
+  padding: 10px 8px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.report-observations th {
+  color: #4b6a61;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.report-observations td > label {
+  margin-bottom: 8px;
+}
+
+.report-observations input {
+  min-width: 120px;
+  padding: 8px 9px;
+}
+
+.report-provenance {
+  min-width: 150px;
+  color: #4b6a61;
+  font-size: 0.8rem;
+}
+
+.report-provenance small {
+  display: block;
+  margin-top: 5px;
+}
+
+.report-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.confirmed-report-reference code,
+.confirmed-report-card code {
+  overflow-wrap: anywhere;
+}
+
+.confirmed-observations {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding-left: 20px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 700px) {
+  .report-review-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .report-section-heading {
+    display: grid;
+  }
+
+  .report-review-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-review-actions button {
+    width: 100%;
+  }
+}

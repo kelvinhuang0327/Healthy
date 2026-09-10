@@ -979,6 +979,13 @@ export default function Home() {
                 >
                   View Health Analytics
                 </a>
+                <a
+                  className="history-link"
+                  data-testid="reports-link"
+                  href={`/reports?person_id=${encodeURIComponent(selectedPerson.id)}`}
+                >
+                  Review Health Report Files
+                </a>
               </div>
             ) : null}
           </article>

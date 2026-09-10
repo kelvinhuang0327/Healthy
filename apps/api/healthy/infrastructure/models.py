@@ -151,6 +151,11 @@ class Person(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    report_intakes: Mapped[list[ReportIntakeModel]] = orm_relationship(
+        back_populates="person",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class HealthMetric(Base):
@@ -716,3 +721,152 @@ class HealthReportObservationModel(Base):
     )
 
     report: Mapped[HealthReportModel] = orm_relationship(back_populates="observations")
+
+
+class ReportIntakeModel(Base):
+    __tablename__ = "report_intakes"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending_review', 'confirmed', 'failed')",
+            name="ck_report_intakes_status",
+        ),
+        CheckConstraint(
+            "pending_review = (status = 'pending_review')",
+            name="ck_report_intakes_pending_review_consistent",
+        ),
+        CheckConstraint(
+            "status <> 'confirmed' OR report_id IS NOT NULL",
+            name="ck_report_intakes_confirmed_requires_report",
+        ),
+        UniqueConstraint(
+            "person_id",
+            "file_sha256",
+            name="uq_report_intakes_person_file_sha256",
+        ),
+        Index(
+            "ix_report_intakes_person_timeline",
+            "person_id",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("persons.id", ondelete="CASCADE"),
+        index=True,
+    )
+    source_filename: Mapped[str] = mapped_column(String(255))
+    source_name: Mapped[str] = mapped_column(String(128))
+    file_sha256: Mapped[str] = mapped_column(String(64))
+    media_type: Mapped[str] = mapped_column(String(64))
+    extraction_method: Mapped[str] = mapped_column(String(32))
+    parser_version: Mapped[str] = mapped_column(String(64))
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    extracted_character_count: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(
+        String(24),
+        default="pending_review",
+        server_default=text("'pending_review'"),
+    )
+    pending_review: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("1"),
+    )
+    reported_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    error_message: Mapped[str | None] = mapped_column(String(256))
+    report_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("health_reports.id", ondelete="CASCADE"),
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+    person: Mapped[Person] = orm_relationship(back_populates="report_intakes")
+    report: Mapped[HealthReportModel | None] = orm_relationship()
+    observations: Mapped[list[ReportIntakeObservationModel]] = orm_relationship(
+        back_populates="intake",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ReportIntakeObservationModel.ordinal",
+    )
+
+    @property
+    def parser_metadata(self) -> dict[str, int | str | None]:
+        return {
+            "parser_version": self.parser_version,
+            "page_count": self.page_count,
+            "extracted_character_count": self.extracted_character_count,
+        }
+
+
+class ReportIntakeObservationModel(Base):
+    __tablename__ = "report_intake_observations"
+    __table_args__ = (
+        CheckConstraint(
+            "value_numeric IS NOT NULL OR "
+            "(value_text IS NOT NULL AND length(trim(value_text)) > 0)",
+            name="ck_report_intake_observations_at_least_one_value",
+        ),
+        CheckConstraint(
+            "parser_confidence IS NULL OR parser_confidence BETWEEN 0 AND 1",
+            name="ck_report_intake_observations_confidence_bounds",
+        ),
+        UniqueConstraint(
+            "intake_id",
+            "ordinal",
+            name="uq_report_intake_observations_intake_ordinal",
+        ),
+        Index(
+            "ix_report_intake_observations_intake_order",
+            "intake_id",
+            "ordinal",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    intake_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("report_intakes.id", ondelete="CASCADE"),
+        index=True,
+    )
+    ordinal: Mapped[int] = mapped_column(Integer)
+    code: Mapped[str] = mapped_column(String(64))
+    display_name: Mapped[str] = mapped_column(String(128))
+    value_numeric: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    value_text: Mapped[str | None] = mapped_column(Text)
+    unit: Mapped[str | None] = mapped_column(String(32))
+    reference_range: Mapped[str | None] = mapped_column(String(128))
+    observed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    parser_provenance: Mapped[str] = mapped_column(String(128))
+    parser_confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 4))
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    intake: Mapped[ReportIntakeModel] = orm_relationship(back_populates="observations")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from conftest import DATABASE_URL, ORIGIN, csrf_headers, register
@@ -30,7 +31,7 @@ def test_height_is_nullable_persisted_and_survives_a_new_session(
 
     database = Database(DATABASE_URL)
     with next(database.sessions()) as database_session:
-        person = database_session.scalar(select(Person).where(Person.id == person_id))
+        person = database_session.scalar(select(Person).where(Person.id == UUID(person_id)))
         assert person is not None
         assert person.height_cm == Decimal("173.25")
 

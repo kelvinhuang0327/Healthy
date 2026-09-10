@@ -4,7 +4,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "20260803_0006"
 down_revision: str | None = "20260730_0005"
@@ -15,8 +14,8 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "health_reports",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("person_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("person_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("schema_version", sa.String(length=64), nullable=False),
         sa.Column("source_name", sa.String(length=128), nullable=False),
         sa.Column("reported_at", sa.DateTime(timezone=True), nullable=False),
@@ -25,7 +24,7 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.Column("confirmed_at", sa.DateTime(timezone=True), nullable=True),
@@ -46,22 +45,23 @@ def upgrade() -> None:
             name="uq_health_reports_person_sha256",
         ),
     )
+    op.create_index("ix_health_reports_person_id", "health_reports", ["person_id"])
     op.create_index(
         "ix_health_reports_person_timeline",
         "health_reports",
         [
             "person_id",
-            sa.text("reported_at DESC"),
-            sa.text("created_at DESC"),
-            sa.text("id DESC"),
+            "reported_at",
+            "created_at",
+            "id",
         ],
     )
 
     op.create_table(
         "health_report_observations",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("report_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("person_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("report_id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("person_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("code", sa.String(length=64), nullable=False),
         sa.Column("display_name", sa.String(length=128), nullable=False),
         sa.Column("value_numeric", sa.Numeric(precision=12, scale=4), nullable=True),
@@ -72,7 +72,7 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
@@ -95,15 +95,24 @@ def upgrade() -> None:
         ["report_id"],
     )
     op.create_index(
+        "ix_health_report_observations_person_id",
+        "health_report_observations",
+        ["person_id"],
+    )
+    op.create_index(
         "ix_health_report_observations_person_code",
         "health_report_observations",
-        ["person_id", "code", sa.text("observed_at DESC")],
+        ["person_id", "code", "observed_at"],
     )
 
 
 def downgrade() -> None:
     op.drop_index(
         "ix_health_report_observations_person_code",
+        table_name="health_report_observations",
+    )
+    op.drop_index(
+        "ix_health_report_observations_person_id",
         table_name="health_report_observations",
     )
     op.drop_index(
@@ -114,6 +123,10 @@ def downgrade() -> None:
 
     op.drop_index(
         "ix_health_reports_person_timeline",
+        table_name="health_reports",
+    )
+    op.drop_index(
+        "ix_health_reports_person_id",
         table_name="health_reports",
     )
     op.drop_table("health_reports")

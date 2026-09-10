@@ -15,6 +15,11 @@ from healthy.application.legacy_metric_export import (
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
+pytestmark = pytest.mark.skipif(
+    not DATABASE_URL.startswith("postgresql"),
+    reason="legacy schema rehearsal requires PostgreSQL",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class LegacyMetricFixture:

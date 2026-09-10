@@ -12,11 +12,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 PREVIOUS_REVISION = "20260818_0014"
-NEW_REVISION = "20260820_0015"
+NEW_REVISION = "20260910_0016"
 TWO_DECIMAL_METRIC_ID = uuid.UUID("00000000-0000-0000-0000-000000000901")
 ONE_DECIMAL_METRIC_ID = uuid.UUID("00000000-0000-0000-0000-000000000902")
 TWO_DECIMAL_FINGERPRINT = "a" * 64
 ONE_DECIMAL_FINGERPRINT = "b" * 64
+
+pytestmark = pytest.mark.skipif(
+    not DATABASE_URL.startswith("postgresql"),
+    reason="information_schema precision migration assertions require PostgreSQL",
+)
 
 
 def _alembic_config() -> Config:

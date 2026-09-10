@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from conftest import ORIGIN, csrf_headers, register
 from fastapi.testclient import TestClient
@@ -36,10 +37,19 @@ def _valid_report_payload() -> dict:
     }
 
 
+def _recent_report_payload() -> dict:
+    payload = _valid_report_payload()
+    recent_timestamp = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    payload["reported_at"] = recent_timestamp
+    for observation in payload["observations"]:
+        observation["observed_at"] = recent_timestamp
+    return payload
+
+
 def test_import_health_report_lifecycle_and_idempotency(client: TestClient) -> None:
     assert register(client).status_code == 201
     person_id = _person_id(client)
-    payload = _valid_report_payload()
+    payload = _recent_report_payload()
 
     # 1. Import new report -> 201 Created, status='pending'
     resp = client.post(
@@ -95,7 +105,7 @@ def test_import_health_report_lifecycle_and_idempotency(client: TestClient) -> N
 def test_repeated_gets_do_not_write_reports(client: TestClient) -> None:
     assert register(client).status_code == 201
     person_id = _person_id(client)
-    payload = _valid_report_payload()
+    payload = _recent_report_payload()
 
     resp = client.post(
         f"/v1/persons/{person_id}/reports",
@@ -115,11 +125,7 @@ def test_pending_reports_excluded_and_confirmed_included_in_today_guidance(
 ) -> None:
     assert register(client).status_code == 201
     person_id = _person_id(client)
-    now_str = (datetime.now(UTC) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
-    payload = _valid_report_payload()
-    payload["reported_at"] = now_str
-    for obs in payload["observations"]:
-        obs["observed_at"] = now_str
+    payload = _recent_report_payload()
 
     # Import pending report
     import_resp = client.post(
@@ -236,7 +242,7 @@ def test_full_source_payload_not_retained(client: TestClient) -> None:
     )
     assert resp.status_code == 201
     report_data = resp.json()
-    report_id = report_data["id"]
+    report_id = UUID(report_data["id"])
 
     assert "raw_json" not in report_data
     assert "raw_untrusted_blob" not in report_data

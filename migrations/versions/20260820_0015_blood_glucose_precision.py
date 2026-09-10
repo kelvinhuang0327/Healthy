@@ -12,13 +12,22 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.alter_column(
-        "health_metrics",
-        "blood_glucose_mg_dl",
-        existing_type=sa.Numeric(precision=5, scale=1),
-        type_=sa.Numeric(precision=6, scale=2),
-        existing_nullable=True,
-    )
+    if op.get_bind().dialect.name == "sqlite":
+        with op.batch_alter_table("health_metrics", recreate="always") as batch_op:
+            batch_op.alter_column(
+                "blood_glucose_mg_dl",
+                existing_type=sa.Numeric(precision=5, scale=1),
+                type_=sa.Numeric(precision=6, scale=2),
+                existing_nullable=True,
+            )
+    else:
+        op.alter_column(
+            "health_metrics",
+            "blood_glucose_mg_dl",
+            existing_type=sa.Numeric(precision=5, scale=1),
+            type_=sa.Numeric(precision=6, scale=2),
+            existing_nullable=True,
+        )
 
 
 def downgrade() -> None:
@@ -38,10 +47,19 @@ def downgrade() -> None:
     if precision_loss is not None:
         raise RuntimeError("BLOOD_GLUCOSE_DOWNGRADE_PRECISION_LOSS")
 
-    op.alter_column(
-        "health_metrics",
-        "blood_glucose_mg_dl",
-        existing_type=sa.Numeric(precision=6, scale=2),
-        type_=sa.Numeric(precision=5, scale=1),
-        existing_nullable=True,
-    )
+    if op.get_bind().dialect.name == "sqlite":
+        with op.batch_alter_table("health_metrics", recreate="always") as batch_op:
+            batch_op.alter_column(
+                "blood_glucose_mg_dl",
+                existing_type=sa.Numeric(precision=6, scale=2),
+                type_=sa.Numeric(precision=5, scale=1),
+                existing_nullable=True,
+            )
+    else:
+        op.alter_column(
+            "health_metrics",
+            "blood_glucose_mg_dl",
+            existing_type=sa.Numeric(precision=6, scale=2),
+            type_=sa.Numeric(precision=5, scale=1),
+            existing_nullable=True,
+        )

@@ -20,6 +20,9 @@ test-results/
 
 # Local runtime
 *.log
+*.db
+*.db-shm
+*.db-wal
 .env
 .env.*
 !.env.example

@@ -35,6 +35,20 @@ ALL_SUPPORTED_HEADERS = {
     *SUPPORTED_OPTIONAL_HEADERS,
 }
 
+# Compatibility names retained for the pre-main SQLite persistence tests.
+SUPPORT_HEADER_ORDER = (
+    MANDATORY_HEADER,
+    "systolic_bp_mm_hg",
+    "diastolic_bp_mm_hg",
+    "heart_rate_bpm",
+    "steps",
+    "weight_kg",
+    "blood_glucose_mg_dl",
+    "sleep_hours",
+    "note",
+)
+OPTIONAL_METRIC_HEADERS = SUPPORTED_OPTIONAL_HEADERS
+
 
 class HealthMetricCsvImportError(ValueError):
     """Raised when CSV-level parsing or validation fails."""

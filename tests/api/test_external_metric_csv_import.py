@@ -552,9 +552,10 @@ def test_imported_metrics_participate_in_health_score_and_risk_alerts(client: Te
     person_id = _person_id(client)
 
     # Import high blood pressure metrics
+    recorded_at = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     csv_data = (
         "recorded_at,systolic_bp_mm_hg,diastolic_bp_mm_hg,heart_rate_bpm\n"
-        "2026-08-01T08:00:00Z,160,100,80\n"
+        f"{recorded_at},160,100,80\n"
     )
     import_res = _import_csv(client, person_id, csv_data)
     assert import_res.status_code == 200

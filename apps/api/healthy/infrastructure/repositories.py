@@ -7,8 +7,10 @@ from typing import Any
 
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, joinedload
 
+from healthy.domain import external_imports as external_imports_domain
 from healthy.domain.actions import HealthActionOriginType, HealthActionStatus
 from healthy.domain.external_imports import (
     SOURCE_TYPE_EXTERNAL_CSV,
@@ -128,6 +130,7 @@ class HealthMetricRepository:
     ) -> int:
         if not rows:
             return 0
+
         seen_fingerprints: set[str] = set()
         unique_rows: list[ParsedHealthMetricRow] = []
         for row in rows:
@@ -135,40 +138,60 @@ class HealthMetricRepository:
                 seen_fingerprints.add(row.source_record_fingerprint)
                 unique_rows.append(row)
 
+        dialect_name = database_session.get_bind().dialect.name
+        insert = sqlite_insert if dialect_name == "sqlite" else postgresql_insert
         inserted_count = 0
+        conflict_columns = [
+            HealthMetric.person_id,
+            HealthMetric.source_type,
+            HealthMetric.source_record_fingerprint,
+        ]
+
         for row in unique_rows:
-            statement = (
-                postgresql_insert(HealthMetric)
-                .values(
-                    person_id=person_id,
-                    recorded_at=row.recorded_at,
-                    systolic_bp_mm_hg=row.systolic_bp_mm_hg,
-                    diastolic_bp_mm_hg=row.diastolic_bp_mm_hg,
-                    heart_rate_bpm=row.heart_rate_bpm,
-                    steps=row.steps,
-                    weight_kg=row.weight_kg,
-                    blood_glucose_mg_dl=row.blood_glucose_mg_dl,
-                    sleep_hours=row.sleep_hours,
-                    note=row.note,
-                    source_type=SOURCE_TYPE_EXTERNAL_CSV,
-                    source_record_fingerprint=row.source_record_fingerprint,
+            statement = insert(HealthMetric).values(
+                id=uuid.uuid4(),
+                person_id=person_id,
+                recorded_at=row.recorded_at,
+                systolic_bp_mm_hg=row.systolic_bp_mm_hg,
+                diastolic_bp_mm_hg=row.diastolic_bp_mm_hg,
+                heart_rate_bpm=row.heart_rate_bpm,
+                steps=row.steps,
+                weight_kg=row.weight_kg,
+                blood_glucose_mg_dl=row.blood_glucose_mg_dl,
+                sleep_hours=row.sleep_hours,
+                note=row.note,
+                source_type=SOURCE_TYPE_EXTERNAL_CSV,
+                source_record_fingerprint=row.source_record_fingerprint,
+            )
+            if dialect_name == "sqlite":
+                statement = statement.on_conflict_do_nothing(
+                    index_elements=conflict_columns,
                 )
-                .on_conflict_do_nothing(
-                    index_elements=[
-                        HealthMetric.person_id,
-                        HealthMetric.source_type,
-                        HealthMetric.source_record_fingerprint,
-                    ],
+            else:
+                statement = statement.on_conflict_do_nothing(
+                    index_elements=conflict_columns,
                     index_where=text("source_record_fingerprint IS NOT NULL"),
                 )
-                .returning(HealthMetric.id)
-            )
-            result = database_session.execute(statement).scalar_one_or_none()
+            result = database_session.execute(
+                statement.returning(HealthMetric.id)
+            ).scalar_one_or_none()
             if result is not None:
                 inserted_count += 1
 
         database_session.flush()
         return inserted_count
+
+    @staticmethod
+    def import_external_rows(
+        database_session: Session,
+        person_id: uuid.UUID,
+        rows: list[external_imports_domain.ParsedHealthMetricRow],
+    ) -> int:
+        return HealthMetricRepository.import_external_metrics(
+            database_session,
+            person_id,
+            rows,
+        )
 
     @staticmethod
     def list_for_person(database_session: Session, person_id: uuid.UUID) -> list[HealthMetric]:
@@ -477,8 +500,13 @@ class HealthActionReminderRepository:
         local_time: time,
         updated_at: datetime,
     ) -> HealthActionReminder:
+        insert = (
+            sqlite_insert
+            if database_session.get_bind().dialect.name == "sqlite"
+            else postgresql_insert
+        )
         statement = (
-            postgresql_insert(HealthActionReminder)
+            insert(HealthActionReminder)
             .values(
                 action_id=action_id,
                 timezone_name=timezone_name,
@@ -680,6 +708,35 @@ class NotificationDeliveryRepository:
         *,
         claimed_at: datetime,
     ) -> NotificationDelivery | None:
+        if database_session.get_bind().dialect.name == "sqlite":
+            candidate_id = (
+                select(NotificationDelivery.id)
+                .where(
+                    NotificationDelivery.channel == NotificationChannel.EMAIL,
+                    NotificationDelivery.status == NotificationDeliveryStatus.PENDING,
+                )
+                .order_by(NotificationDelivery.created_at, NotificationDelivery.id)
+                .limit(1)
+                .scalar_subquery()
+            )
+            sqlite_statement = (
+                update(NotificationDelivery)
+                .where(
+                    NotificationDelivery.id == candidate_id,
+                    NotificationDelivery.channel == NotificationChannel.EMAIL,
+                    NotificationDelivery.status == NotificationDeliveryStatus.PENDING,
+                )
+                .values(
+                    status=NotificationDeliveryStatus.SENDING,
+                    claimed_at=claimed_at,
+                    attempt_count=NotificationDelivery.attempt_count + 1,
+                    updated_at=claimed_at,
+                )
+                .returning(NotificationDelivery)
+                .execution_options(populate_existing=True)
+            )
+            return database_session.scalars(sqlite_statement).one_or_none()
+
         statement = (
             select(NotificationDelivery)
             .where(

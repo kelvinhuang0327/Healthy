@@ -12,8 +12,10 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("persons", sa.Column("height_cm", sa.Numeric(5, 2), nullable=True))
+    with op.batch_alter_table("persons") as batch_op:
+        batch_op.add_column(sa.Column("height_cm", sa.Numeric(5, 2), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("persons", "height_cm")
+    with op.batch_alter_table("persons") as batch_op:
+        batch_op.drop_column("height_cm")

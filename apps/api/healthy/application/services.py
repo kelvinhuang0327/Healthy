@@ -16,6 +16,7 @@ from healthy.application.history import HistoryItem, build_history
 from healthy.domain import action_recommendations as action_recommendations_domain
 from healthy.domain import actions as actions_domain
 from healthy.domain import assistant as assistant_domain
+from healthy.domain import external_imports as external_imports_domain
 from healthy.domain import health_score as health_score_domain
 from healthy.domain import insights as insights_domain
 from healthy.domain import outcomes as outcomes_domain
@@ -338,6 +339,19 @@ def create_health_metric(
         database_session.rollback()
         raise HealthMetricIntegrityError from error
     return metric
+
+
+def import_external_health_metrics_csv(
+    database_session: Session,
+    *,
+    person_id: uuid.UUID,
+    payload: bytes,
+) -> external_imports_domain.ExternalMetricCsvImportSummary:
+    return import_external_metrics_csv(
+        database_session,
+        person_id=person_id,
+        csv_payload=payload,
+    )
 
 
 def import_external_metrics_csv(

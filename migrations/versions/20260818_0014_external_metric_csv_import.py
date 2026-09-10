@@ -11,7 +11,36 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def upgrade() -> None:
+def _upgrade_sqlite() -> None:
+    with op.batch_alter_table("health_metrics", recreate="always") as batch_op:
+        batch_op.add_column(
+            sa.Column(
+                "source_type",
+                sa.String(length=32),
+                server_default=sa.text("'manual'"),
+                nullable=False,
+            )
+        )
+        batch_op.add_column(
+            sa.Column("source_record_fingerprint", sa.String(length=64), nullable=True)
+        )
+        batch_op.create_check_constraint(
+            "source_type_allowed",
+            "source_type IN ('manual', 'external_csv')",
+        )
+        batch_op.create_check_constraint(
+            "source_record_fingerprint_length",
+            "source_record_fingerprint IS NULL OR length(source_record_fingerprint) = 64",
+        )
+        batch_op.create_index(
+            "uq_health_metrics_person_source_fingerprint",
+            ["person_id", "source_type", "source_record_fingerprint"],
+            unique=True,
+            sqlite_where=sa.text("source_record_fingerprint IS NOT NULL"),
+        )
+
+
+def _upgrade_postgresql() -> None:
     op.add_column(
         "health_metrics",
         sa.Column(
@@ -44,7 +73,23 @@ def upgrade() -> None:
     )
 
 
-def downgrade() -> None:
+def upgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        _upgrade_sqlite()
+    else:
+        _upgrade_postgresql()
+
+
+def _downgrade_sqlite() -> None:
+    with op.batch_alter_table("health_metrics", recreate="always") as batch_op:
+        batch_op.drop_index("uq_health_metrics_person_source_fingerprint")
+        batch_op.drop_constraint("source_record_fingerprint_length", type_="check")
+        batch_op.drop_constraint("source_type_allowed", type_="check")
+        batch_op.drop_column("source_record_fingerprint")
+        batch_op.drop_column("source_type")
+
+
+def _downgrade_postgresql() -> None:
     op.drop_index(
         "uq_health_metrics_person_source_fingerprint",
         table_name="health_metrics",
@@ -61,3 +106,10 @@ def downgrade() -> None:
     )
     op.drop_column("health_metrics", "source_record_fingerprint")
     op.drop_column("health_metrics", "source_type")
+
+
+def downgrade() -> None:
+    if op.get_bind().dialect.name == "sqlite":
+        _downgrade_sqlite()
+    else:
+        _downgrade_postgresql()

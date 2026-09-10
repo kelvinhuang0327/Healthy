@@ -71,7 +71,7 @@ def test_repeated_gets_do_not_write_or_refresh(client: TestClient) -> None:
     assert after == before
 
 
-def test_postgres_constraint_allows_only_one_concurrent_default_person() -> None:
+def test_database_constraint_allows_only_one_concurrent_default_person() -> None:
     database = Database(DATABASE_URL)
     with next(database.sessions()) as database_session:
         account = Account(

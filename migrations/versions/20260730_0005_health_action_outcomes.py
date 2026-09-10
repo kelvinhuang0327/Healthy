@@ -4,7 +4,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "20260730_0005"
 down_revision: str | None = "20260729_0004"
@@ -15,21 +14,21 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "health_action_outcomes",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("action_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("id", sa.Uuid(as_uuid=True), nullable=False),
+        sa.Column("action_id", sa.Uuid(as_uuid=True), nullable=False),
         sa.Column("note", sa.String(length=2000), nullable=False),
         sa.Column("observed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.func.now(),
             nullable=False,
         ),
         sa.CheckConstraint(
-            "char_length(note) BETWEEN 1 AND 2000",
+            "length(note) BETWEEN 1 AND 2000",
             name="note_length",
         ),
-        sa.CheckConstraint("note = btrim(note)", name="note_trimmed"),
+        sa.CheckConstraint("note = trim(note)", name="note_trimmed"),
         sa.ForeignKeyConstraint(
             ["action_id"],
             ["health_actions.id"],
@@ -48,9 +47,9 @@ def upgrade() -> None:
         "health_action_outcomes",
         [
             "action_id",
-            sa.text("observed_at DESC"),
-            sa.text("created_at DESC"),
-            sa.text("id DESC"),
+            "observed_at",
+            "created_at",
+            "id",
         ],
     )
 

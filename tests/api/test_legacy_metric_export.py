@@ -10,6 +10,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from conftest import DATABASE_URL
 from healthy.application.legacy_metric_export import (
     LegacyExportCompatibilityError,
     LegacyPersonNotFoundError,
@@ -734,6 +735,10 @@ def test_person_with_zero_metrics_exports_empty_csv(tmp_path: Path) -> None:
     assert len(parsed) == 0
 
 
+@pytest.mark.skipif(
+    not DATABASE_URL.startswith("postgresql"),
+    reason="legacy schema export requires PostgreSQL",
+)
 def test_postgresql_legacy_source_read_only_and_data_types(tmp_path: Path) -> None:
     from conftest import DATABASE_URL
     from sqlalchemy import create_engine, text

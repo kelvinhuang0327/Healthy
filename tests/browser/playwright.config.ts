@@ -1,8 +1,10 @@
 import { defineConfig } from "@playwright/test";
+import { resolve } from "node:path";
 
+const defaultDatabasePath = resolve(process.cwd(), ".healthy-test.db");
 const databaseUrl =
   process.env.HEALTHY_DATABASE_URL ??
-  "postgresql+psycopg://healthy@127.0.0.1:55432/healthy_test";
+  `sqlite+pysqlite:///${defaultDatabasePath}`;
 
 export default defineConfig({
   testDir: ".",
@@ -47,7 +49,7 @@ export default defineConfig({
       },
     },
     {
-      command: "npm run web:dev",
+      command: "npm run start --workspace @healthy/web",
       cwd: process.cwd(),
       url: "http://127.0.0.1:3000",
       reuseExistingServer: false,

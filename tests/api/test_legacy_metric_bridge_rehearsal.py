@@ -369,10 +369,10 @@ def test_legacy_metric_bridge_rehearsal_uses_postgres_source_and_sqlite_target(
         assert {item["source"]["id"] for item in metric_history} == set(first_metric_ids)
         assert all(item["source"]["type"] == "metric" for item in metric_history)
 
-        analytics_response = client.get(f"/v1/persons/{healthy_person_id}/analytics?days=30")
+        analytics_response = client.get(f"/v1/persons/{healthy_person_id}/analytics?days=365")
         assert analytics_response.status_code == 200, analytics_response.text
         analytics = analytics_response.json()
-        assert analytics["period_days"] == 30
+        assert analytics["period_days"] == 365
         analytics_points = {item["metric"]: item["points"] for item in analytics["summaries"]}
         assert analytics_points == {
             "systolic_bp_mm_hg": 1,

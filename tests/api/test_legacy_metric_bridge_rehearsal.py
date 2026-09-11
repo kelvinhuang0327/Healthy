@@ -6,7 +6,15 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from conftest import DATABASE_URL, ORIGIN, csrf_headers, register
+from conftest import (
+    DATABASE_URL,
+    LEGACY_POSTGRES_DATABASE_URL,
+    ORIGIN,
+    csrf_headers,
+    legacy_postgres_engine,
+    legacy_postgres_skip_reason,
+    register,
+)
 from fastapi.testclient import TestClient
 from healthy.application.legacy_metric_export import (
     LegacyExportCompatibilityError,
@@ -15,10 +23,13 @@ from healthy.application.legacy_metric_export import (
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-pytestmark = pytest.mark.skipif(
-    not DATABASE_URL.startswith("postgresql"),
-    reason="legacy schema rehearsal requires PostgreSQL",
-)
+pytestmark = [
+    pytest.mark.legacy_postgres,
+    pytest.mark.skipif(
+        legacy_postgres_skip_reason() is not None,
+        reason=legacy_postgres_skip_reason() or "legacy PostgreSQL tooling is unavailable",
+    ),
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +142,9 @@ EXPECTED_EXPORT_METRICS = (
 
 
 def _legacy_database_url(schema_name: str) -> str:
-    return f"{DATABASE_URL}?options=-csearch_path%3D{schema_name}"
+    assert LEGACY_POSTGRES_DATABASE_URL is not None
+    separator = "&" if "?" in LEGACY_POSTGRES_DATABASE_URL else "?"
+    return f"{LEGACY_POSTGRES_DATABASE_URL}{separator}options=-csearch_path%3D{schema_name}"
 
 
 def _create_legacy_fixture(engine: Engine, schema_name: str) -> None:
@@ -308,10 +321,11 @@ def _expected_projection(metric: LegacyMetricFixture) -> tuple[object, ...]:
     )
 
 
-def test_legacy_metric_bridge_rehearsal_uses_postgres_export_and_http_import(
+def test_legacy_metric_bridge_rehearsal_uses_postgres_source_and_sqlite_target(
     client: TestClient,
 ) -> None:
-    admin_engine = create_engine(DATABASE_URL)
+    assert DATABASE_URL.startswith("sqlite")
+    admin_engine = legacy_postgres_engine()
     schema_name = f"legacy_rehearsal_{uuid.uuid4().hex}"
 
     try:
@@ -355,10 +369,10 @@ def test_legacy_metric_bridge_rehearsal_uses_postgres_export_and_http_import(
         assert {item["source"]["id"] for item in metric_history} == set(first_metric_ids)
         assert all(item["source"]["type"] == "metric" for item in metric_history)
 
-        analytics_response = client.get(f"/v1/persons/{healthy_person_id}/analytics?days=30")
+        analytics_response = client.get(f"/v1/persons/{healthy_person_id}/analytics?days=365")
         assert analytics_response.status_code == 200, analytics_response.text
         analytics = analytics_response.json()
-        assert analytics["period_days"] == 30
+        assert analytics["period_days"] == 365
         analytics_points = {item["metric"]: item["points"] for item in analytics["summaries"]}
         assert analytics_points == {
             "systolic_bp_mm_hg": 1,
@@ -419,4 +433,5 @@ def test_legacy_metric_bridge_rehearsal_uses_postgres_export_and_http_import(
         _drop_legacy_schema(admin_engine, schema_name)
         admin_engine.dispose()
 
-    assert _schema_exists(DATABASE_URL, schema_name) is False
+    assert LEGACY_POSTGRES_DATABASE_URL is not None
+    assert _schema_exists(LEGACY_POSTGRES_DATABASE_URL, schema_name) is False

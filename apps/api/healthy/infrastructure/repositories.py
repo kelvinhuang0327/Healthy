@@ -5,8 +5,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, func, select, text, update
-from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -140,8 +139,6 @@ class HealthMetricRepository:
                 seen_fingerprints.add(row.source_record_fingerprint)
                 unique_rows.append(row)
 
-        dialect_name = database_session.get_bind().dialect.name
-        insert = sqlite_insert if dialect_name == "sqlite" else postgresql_insert
         inserted_count = 0
         conflict_columns = [
             HealthMetric.person_id,
@@ -150,7 +147,7 @@ class HealthMetricRepository:
         ]
 
         for row in unique_rows:
-            statement = insert(HealthMetric).values(
+            statement = sqlite_insert(HealthMetric).values(
                 id=uuid.uuid4(),
                 person_id=person_id,
                 recorded_at=row.recorded_at,
@@ -165,15 +162,9 @@ class HealthMetricRepository:
                 source_type=SOURCE_TYPE_EXTERNAL_CSV,
                 source_record_fingerprint=row.source_record_fingerprint,
             )
-            if dialect_name == "sqlite":
-                statement = statement.on_conflict_do_nothing(
-                    index_elements=conflict_columns,
-                )
-            else:
-                statement = statement.on_conflict_do_nothing(
-                    index_elements=conflict_columns,
-                    index_where=text("source_record_fingerprint IS NOT NULL"),
-                )
+            statement = statement.on_conflict_do_nothing(
+                index_elements=conflict_columns,
+            )
             result = database_session.execute(
                 statement.returning(HealthMetric.id)
             ).scalar_one_or_none()
@@ -502,13 +493,8 @@ class HealthActionReminderRepository:
         local_time: time,
         updated_at: datetime,
     ) -> HealthActionReminder:
-        insert = (
-            sqlite_insert
-            if database_session.get_bind().dialect.name == "sqlite"
-            else postgresql_insert
-        )
         statement = (
-            insert(HealthActionReminder)
+            sqlite_insert(HealthActionReminder)
             .values(
                 action_id=action_id,
                 timezone_name=timezone_name,
@@ -640,7 +626,7 @@ class NotificationDeliveryRepository:
         created_at: datetime,
     ) -> NotificationDelivery | None:
         statement = (
-            postgresql_insert(NotificationDelivery)
+            sqlite_insert(NotificationDelivery)
             .values(
                 reminder_id=reminder_id,
                 channel=NotificationChannel.EMAIL,
@@ -710,54 +696,33 @@ class NotificationDeliveryRepository:
         *,
         claimed_at: datetime,
     ) -> NotificationDelivery | None:
-        if database_session.get_bind().dialect.name == "sqlite":
-            candidate_id = (
-                select(NotificationDelivery.id)
-                .where(
-                    NotificationDelivery.channel == NotificationChannel.EMAIL,
-                    NotificationDelivery.status == NotificationDeliveryStatus.PENDING,
-                )
-                .order_by(NotificationDelivery.created_at, NotificationDelivery.id)
-                .limit(1)
-                .scalar_subquery()
-            )
-            sqlite_statement = (
-                update(NotificationDelivery)
-                .where(
-                    NotificationDelivery.id == candidate_id,
-                    NotificationDelivery.channel == NotificationChannel.EMAIL,
-                    NotificationDelivery.status == NotificationDeliveryStatus.PENDING,
-                )
-                .values(
-                    status=NotificationDeliveryStatus.SENDING,
-                    claimed_at=claimed_at,
-                    attempt_count=NotificationDelivery.attempt_count + 1,
-                    updated_at=claimed_at,
-                )
-                .returning(NotificationDelivery)
-                .execution_options(populate_existing=True)
-            )
-            return database_session.scalars(sqlite_statement).one_or_none()
-
-        statement = (
-            select(NotificationDelivery)
+        candidate_id = (
+            select(NotificationDelivery.id)
             .where(
                 NotificationDelivery.channel == NotificationChannel.EMAIL,
                 NotificationDelivery.status == NotificationDeliveryStatus.PENDING,
             )
             .order_by(NotificationDelivery.created_at, NotificationDelivery.id)
-            .with_for_update(skip_locked=True)
             .limit(1)
+            .scalar_subquery()
         )
-        delivery = database_session.scalar(statement)
-        if delivery is None:
-            return None
-        delivery.status = NotificationDeliveryStatus.SENDING
-        delivery.claimed_at = claimed_at
-        delivery.attempt_count += 1
-        delivery.updated_at = claimed_at
-        database_session.flush()
-        return delivery
+        statement = (
+            update(NotificationDelivery)
+            .where(
+                NotificationDelivery.id == candidate_id,
+                NotificationDelivery.channel == NotificationChannel.EMAIL,
+                NotificationDelivery.status == NotificationDeliveryStatus.PENDING,
+            )
+            .values(
+                status=NotificationDeliveryStatus.SENDING,
+                claimed_at=claimed_at,
+                attempt_count=NotificationDelivery.attempt_count + 1,
+                updated_at=claimed_at,
+            )
+            .returning(NotificationDelivery)
+            .execution_options(populate_existing=True)
+        )
+        return database_session.scalars(statement).one_or_none()
 
     @staticmethod
     def list_stale_sending(
@@ -773,7 +738,6 @@ class NotificationDeliveryRepository:
                 NotificationDelivery.claimed_at.is_not(None),
                 NotificationDelivery.claimed_at < before,
             )
-            .with_for_update(skip_locked=True)
             .order_by(NotificationDelivery.claimed_at, NotificationDelivery.id)
         )
         return list(database_session.scalars(statement))

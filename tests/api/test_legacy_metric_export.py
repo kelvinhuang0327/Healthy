@@ -10,7 +10,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from conftest import DATABASE_URL
+from conftest import (
+    LEGACY_POSTGRES_DATABASE_URL,
+    legacy_postgres_engine,
+    legacy_postgres_skip_reason,
+)
 from healthy.application.legacy_metric_export import (
     LegacyExportCompatibilityError,
     LegacyPersonNotFoundError,
@@ -735,15 +739,15 @@ def test_person_with_zero_metrics_exports_empty_csv(tmp_path: Path) -> None:
     assert len(parsed) == 0
 
 
+@pytest.mark.legacy_postgres
 @pytest.mark.skipif(
-    not DATABASE_URL.startswith("postgresql"),
-    reason="legacy schema export requires PostgreSQL",
+    legacy_postgres_skip_reason() is not None,
+    reason=legacy_postgres_skip_reason() or "legacy PostgreSQL tooling is unavailable",
 )
 def test_postgresql_legacy_source_read_only_and_data_types(tmp_path: Path) -> None:
-    from conftest import DATABASE_URL
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
 
-    admin_engine = create_engine(DATABASE_URL)
+    admin_engine = legacy_postgres_engine()
     schema_name = f"legacy_pg_{uuid.uuid4().hex[:8]}"
 
     with admin_engine.begin() as conn:
@@ -807,7 +811,11 @@ def test_postgresql_legacy_source_read_only_and_data_types(tmp_path: Path) -> No
             {"id": str(uuid.uuid4()), "user_id": user_id, "person_id": person_id},
         )
 
-    pg_url_with_schema = f"{DATABASE_URL}?options=-csearch_path%3D{schema_name}"
+    assert LEGACY_POSTGRES_DATABASE_URL is not None
+    separator = "&" if "?" in LEGACY_POSTGRES_DATABASE_URL else "?"
+    pg_url_with_schema = (
+        f"{LEGACY_POSTGRES_DATABASE_URL}{separator}options=-csearch_path%3D{schema_name}"
+    )
 
     try:
         out_csv = tmp_path / "pg_export.csv"

@@ -12,7 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from healthy.infrastructure import models  # noqa: E402, F401
-from healthy.infrastructure.config import DEFAULT_DATABASE_URL  # noqa: E402
+from healthy.infrastructure.config import (  # noqa: E402
+    DEFAULT_DATABASE_URL,
+    validate_healthy_database_url,
+)
 from healthy.infrastructure.database import Base  # noqa: E402
 
 config = context.config
@@ -20,6 +23,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 database_url = os.getenv("HEALTHY_DATABASE_URL", DEFAULT_DATABASE_URL)
+validate_healthy_database_url(database_url)
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 target_metadata = Base.metadata
 
@@ -47,7 +51,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            render_as_batch=connection.dialect.name == "sqlite",
+            render_as_batch=True,
         )
         with context.begin_transaction():
             context.run_migrations()

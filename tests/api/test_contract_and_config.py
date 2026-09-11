@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 
 import pytest
-from conftest import DATABASE_URL
+from alembic import command
+from alembic.config import Config
+from conftest import DATABASE_URL, ROOT
 from healthy.infrastructure.config import Settings
 from healthy.infrastructure.database import Database
 from healthy.main import create_app
@@ -137,6 +139,51 @@ def test_production_configuration_fails_closed(
     monkeypatch.setenv("HEALTHY_COOKIE_SECURE", "false")
     with pytest.raises(RuntimeError, match="secure session cookies"):
         Settings.from_env()
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    ["sqlite:///:memory:", "sqlite+pysqlite:///:memory:"],
+)
+def test_settings_accepts_supported_sqlite_database_urls(
+    monkeypatch: pytest.MonkeyPatch,
+    database_url: str,
+) -> None:
+    monkeypatch.setenv("HEALTHY_DATABASE_URL", database_url)
+
+    settings = Settings.from_env()
+
+    assert settings.database_url == database_url
+
+
+def test_settings_rejects_postgresql_application_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "HEALTHY_DATABASE_URL",
+        "postgresql+psycopg://127.0.0.1:1/healthy",
+    )
+
+    with pytest.raises(RuntimeError, match="must use SQLite"):
+        Settings.from_env()
+
+
+def test_alembic_rejects_postgresql_application_url_before_engine_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "HEALTHY_DATABASE_URL",
+        "postgresql+psycopg://127.0.0.1:1/healthy",
+    )
+    monkeypatch.setattr(
+        "sqlalchemy.engine_from_config",
+        lambda *_args, **_kwargs: pytest.fail("Alembic attempted to create a PostgreSQL engine"),
+    )
+    alembic_config = Config(str(ROOT / "migrations" / "alembic.ini"))
+    alembic_config.set_main_option("script_location", str(ROOT / "migrations"))
+
+    with pytest.raises(RuntimeError, match="must use SQLite"):
+        command.upgrade(alembic_config, "head")
 
 
 def test_migration_created_required_database_constraints_and_indexes() -> None:

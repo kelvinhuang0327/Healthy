@@ -32,6 +32,23 @@ def test_default_database_url_is_absolute_persistent_sqlite(
     assert Path(parsed_url.database).name == "healthy.db"
 
 
+@pytest.mark.parametrize(
+    "database_url",
+    ["postgresql+psycopg://127.0.0.1:1/healthy", "mysql+pymysql://127.0.0.1:1/healthy"],
+)
+def test_database_rejects_non_sqlite_url_before_engine_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    database_url: str,
+) -> None:
+    monkeypatch.setattr(
+        "healthy.infrastructure.database.create_engine",
+        lambda *_args, **_kwargs: pytest.fail("Database attempted to create an unsupported engine"),
+    )
+
+    with pytest.raises(RuntimeError, match="must use SQLite"):
+        Database(database_url)
+
+
 def test_fresh_sqlite_database_upgrades_to_head(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

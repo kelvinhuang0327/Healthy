@@ -5,8 +5,28 @@ import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
+
 DEFAULT_DATABASE_PATH = Path(__file__).resolve().parents[4] / "healthy.db"
 DEFAULT_DATABASE_URL = f"sqlite+pysqlite:///{DEFAULT_DATABASE_PATH}"
+SUPPORTED_DATABASE_DRIVERS = frozenset({"sqlite", "sqlite+pysqlite"})
+
+
+def validate_healthy_database_url(database_url: str) -> None:
+    try:
+        drivername = make_url(database_url).drivername
+    except (ArgumentError, TypeError, ValueError) as error:
+        raise RuntimeError(
+            "Healthy application database URL must use SQLite (sqlite or sqlite+pysqlite)"
+        ) from error
+
+    if drivername not in SUPPORTED_DATABASE_DRIVERS:
+        raise RuntimeError(
+            "Healthy application database must use SQLite "
+            "(sqlite or sqlite+pysqlite); "
+            f"received {(drivername or '<missing>')!r}"
+        )
 
 
 def _boolean(name: str, default: bool) -> bool:
@@ -58,6 +78,9 @@ class Settings:
     smtp_username: str | None = field(default=None, repr=False)
     smtp_password: str | None = field(default=None, repr=False)
 
+    def __post_init__(self) -> None:
+        validate_healthy_database_url(self.database_url)
+
     @property
     def email_delivery_available(self) -> bool:
         return (
@@ -101,6 +124,7 @@ class Settings:
                 raise RuntimeError("Production email notifications require secure SMTP transport")
 
         database_url = explicit_database_url or DEFAULT_DATABASE_URL
+        validate_healthy_database_url(database_url)
         origins = frozenset(
             origin.strip().rstrip("/")
             for origin in (explicit_origins or "http://127.0.0.1:3000,http://localhost:3000").split(

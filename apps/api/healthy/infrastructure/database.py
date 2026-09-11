@@ -8,6 +8,8 @@ from sqlalchemy import DateTime, MetaData, TypeDecorator, create_engine, event
 from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from healthy.infrastructure.config import validate_healthy_database_url
+
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",
@@ -64,9 +66,9 @@ def _enable_sqlite_foreign_keys(
 
 class Database:
     def __init__(self, database_url: str) -> None:
+        validate_healthy_database_url(database_url)
         self.engine = create_engine(database_url, pool_pre_ping=True)
-        if self.engine.dialect.name == "sqlite":
-            event.listen(self.engine, "connect", _enable_sqlite_foreign_keys)
+        event.listen(self.engine, "connect", _enable_sqlite_foreign_keys)
         self._session_factory = sessionmaker(
             bind=self.engine,
             class_=Session,

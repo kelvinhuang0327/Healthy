@@ -8,7 +8,6 @@ dependencies = [
   "email-validator==2.3.0",
   "fastapi==0.139.2",
   "pillow==12.3.0",
-  "psycopg[binary]==3.3.4",
   "pwdlib[argon2]==0.3.0",
   "pydantic==2.13.4",
   "pypdf==6.18.0",
@@ -16,6 +15,11 @@ dependencies = [
   "python-multipart==0.0.32",
   "sqlalchemy==2.0.51",
   "uvicorn==0.51.0",
+]
+
+[project.optional-dependencies]
+legacy-postgres = [
+  "psycopg[binary]==3.3.4",
 ]
 
 [dependency-groups]
@@ -33,6 +37,9 @@ package = false
 addopts = "-q"
 pythonpath = ["apps/api"]
 testpaths = ["tests/api"]
+markers = [
+  "legacy_postgres: explicitly opted-in synthetic PostgreSQL legacy-source tooling checks",
+]
 
 [tool.ruff]
 line-length = 100

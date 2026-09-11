@@ -139,3 +139,68 @@ test("upload, review, persistence, and explicit canonical confirmation", async (
   );
   expect(consoleErrors).toEqual([]);
 });
+
+test("report navigation stays isolated to the selected Person", async ({
+  page,
+}) => {
+  const marker = Date.now();
+  await register(
+    page,
+    `report-person-scope-${marker}@example.com`,
+    "Primary Report Person",
+  );
+
+  const primaryPerson = page.getByTestId("person-card").first();
+  await primaryPerson.click();
+  const primaryPersonId = await primaryPerson.getAttribute("data-person-id");
+  expect(primaryPersonId).not.toBeNull();
+
+  await page.getByTestId("person-form").getByLabel("Display name").fill("Other Report Person");
+  await page
+    .getByTestId("person-form")
+    .getByLabel("Relationship")
+    .selectOption("family");
+  await page.getByRole("button", { name: "Create Person" }).click();
+
+  const otherPerson = page.getByTestId("person-card").filter({
+    hasText: "Other Report Person",
+  });
+  await expect(otherPerson).toBeVisible();
+  await otherPerson.click();
+  const otherPersonId = await otherPerson.getAttribute("data-person-id");
+  expect(otherPersonId).not.toBeNull();
+
+  const reportsLink = page.getByTestId("reports-link");
+  const expectedReportsPath = `/reports?person_id=${encodeURIComponent(otherPersonId as string)}`;
+  await expect(reportsLink).toHaveAttribute("href", expectedReportsPath);
+  await reportsLink.click();
+  await expect(page).toHaveURL(new RegExp(`${expectedReportsPath.replace("?", "\\?")}$`));
+  await expect(page.getByTestId("reports-person-select")).toHaveValue(otherPersonId as string);
+  await expect(page.getByTestId("report-intake-empty")).toBeVisible();
+
+  await page.getByTestId("report-file-input").setInputFiles({
+    name: "other-person-report.pdf",
+    mimeType: "application/pdf",
+    buffer: syntheticPdf([
+      "Source: Isolated Report Lab",
+      `Report Date: ${new Date().toISOString().slice(0, 10)}`,
+      "Glucose: 88 mg/dL (65-99)",
+    ]),
+  });
+  await page.getByTestId("report-upload-button").click();
+  await expect(
+    page.locator('[data-testid="report-intake-card"][data-intake-status="pending_review"]'),
+  ).toBeVisible();
+  await page.getByTestId("report-review-save").click();
+  await page.getByTestId("report-review-confirm").click();
+  await expect(page.getByTestId("confirmed-health-report")).toBeVisible();
+
+  await page.getByTestId("reports-person-select").selectOption(primaryPersonId as string);
+  await expect(page.getByTestId("reports-person-select")).toHaveValue(primaryPersonId as string);
+  await expect(page.getByTestId("report-intake-empty")).toBeVisible();
+  await expect(page.getByTestId("confirmed-health-report")).toHaveCount(0);
+
+  await page.getByTestId("reports-person-select").selectOption(otherPersonId as string);
+  await expect(page.getByTestId("reports-person-select")).toHaveValue(otherPersonId as string);
+  await expect(page.getByTestId("confirmed-health-report")).toBeVisible();
+});

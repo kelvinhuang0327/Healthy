@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   api,
@@ -23,6 +23,12 @@ type ReviewObservation = {
   observed_at: string;
   parser_provenance: string;
   parser_confidence: number | null;
+};
+
+type SelectionContext = {
+  personId: string | null;
+  intakeId: string | null;
+  version: number;
 };
 
 function dateInputValue(value: string | null): string {
@@ -123,6 +129,41 @@ export default function ReportsPage() {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const selectionContextRef = useRef<SelectionContext>({
+    personId: null,
+    intakeId: null,
+    version: 0,
+  });
+
+  function setSelectionContext(
+    personId: string | null,
+    intakeId: string | null,
+  ) {
+    selectionContextRef.current = {
+      personId,
+      intakeId,
+      version: selectionContextRef.current.version + 1,
+    };
+  }
+
+  function isCurrentSelection(context: SelectionContext): boolean {
+    const current = selectionContextRef.current;
+    return (
+      current.personId === context.personId &&
+      current.intakeId === context.intakeId &&
+      current.version === context.version
+    );
+  }
+
+  function clearReviewState() {
+    setSelectedIntake(null);
+    setConfirmedReport(null);
+    setLoadedDetailId(null);
+    setSourceName("");
+    setReportedAt("");
+    setObservations([]);
+    setDirty(false);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -139,6 +180,7 @@ export default function ReportsPage() {
           rows.find((candidate) => candidate.is_default) ??
           rows[0] ??
           null;
+        setSelectionContext(person?.id ?? null, null);
         setSession(current);
         setPersons(rows);
         setSelectedPersonId(person?.id ?? null);
@@ -147,6 +189,7 @@ export default function ReportsPage() {
         if (!cancelled) {
           setSession(null);
           setPersons([]);
+          setSelectionContext(null, null);
           setSelectedPersonId(null);
           setError("Sign in to review health reports.");
         }
@@ -165,31 +208,54 @@ export default function ReportsPage() {
     if (!selectedPersonId) {
       return;
     }
+    const requestPersonId = selectedPersonId;
     let cancelled = false;
     api
-      .reportIntakes(selectedPersonId)
+      .reportIntakes(requestPersonId)
       .then((rows) => {
-        if (cancelled) {
+        if (
+          cancelled ||
+          selectionContextRef.current.personId !== requestPersonId
+        ) {
           return;
         }
         setIntakes(rows);
-        setSelectedIntakeId((current) =>
-          rows.some((intake) => intake.id === current)
-            ? current
-            : (rows[0]?.id ?? null),
-        );
-        setLoadedIntakePersonId(selectedPersonId);
+        const currentIntakeId = selectionContextRef.current.intakeId;
+        const nextIntakeId = rows.some(
+          (intake) => intake.id === currentIntakeId,
+        )
+          ? currentIntakeId
+          : (rows[0]?.id ?? null);
+        if (nextIntakeId !== currentIntakeId) {
+          setSelectionContext(requestPersonId, nextIntakeId);
+          setSelectedIntakeId(nextIntakeId);
+          clearReviewState();
+          setUploading(false);
+          setSaving(false);
+          setConfirming(false);
+        } else {
+          setSelectedIntakeId(nextIntakeId);
+        }
+        setLoadedIntakePersonId(requestPersonId);
       })
       .catch((reason) => {
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          selectionContextRef.current.personId === requestPersonId
+        ) {
           setError(
             reason instanceof Error
               ? reason.message
               : "Could not load report intakes.",
           );
           setIntakes([]);
+          setSelectionContext(requestPersonId, null);
           setSelectedIntakeId(null);
-          setLoadedIntakePersonId(selectedPersonId);
+          clearReviewState();
+          setUploading(false);
+          setSaving(false);
+          setConfirming(false);
+          setLoadedIntakePersonId(requestPersonId);
         }
       });
     return () => {
@@ -201,35 +267,53 @@ export default function ReportsPage() {
     if (!selectedPersonId || !selectedIntakeId) {
       return;
     }
+    const requestPersonId = selectedPersonId;
+    const requestIntakeId = selectedIntakeId;
+    const requestContext = { ...selectionContextRef.current };
+    if (
+      requestContext.personId !== requestPersonId ||
+      requestContext.intakeId !== requestIntakeId
+    ) {
+      return;
+    }
     let cancelled = false;
     api
-      .reportIntake(selectedPersonId, selectedIntakeId)
+      .reportIntake(requestPersonId, requestIntakeId)
       .then((detail) => {
-        if (!cancelled) {
-          setSelectedIntake(detail);
-          setConfirmedReport(null);
-          setSourceName(detail.source_name);
-          setReportedAt(dateInputValue(detail.reported_at));
-          setObservations(detail.observations.map(observationForReview));
-          setDirty(false);
-          if (detail.status === "confirmed" && detail.report_id) {
-            api
-              .healthReport(selectedPersonId, detail.report_id)
-              .then(setConfirmedReport)
-              .catch(() => setConfirmedReport(null));
-          }
-          setLoadedDetailId(selectedIntakeId);
+        if (cancelled || !isCurrentSelection(requestContext)) {
+          return;
         }
+        setSelectedIntake(detail);
+        setConfirmedReport(null);
+        setSourceName(detail.source_name);
+        setReportedAt(dateInputValue(detail.reported_at));
+        setObservations(detail.observations.map(observationForReview));
+        setDirty(false);
+        if (detail.status === "confirmed" && detail.report_id) {
+          api
+            .healthReport(requestPersonId, detail.report_id)
+            .then((report) => {
+              if (!cancelled && isCurrentSelection(requestContext)) {
+                setConfirmedReport(report);
+              }
+            })
+            .catch(() => {
+              if (!cancelled && isCurrentSelection(requestContext)) {
+                setConfirmedReport(null);
+              }
+            });
+        }
+        setLoadedDetailId(requestIntakeId);
       })
       .catch((reason) => {
-        if (!cancelled) {
+        if (!cancelled && isCurrentSelection(requestContext)) {
           setError(
             reason instanceof Error
               ? reason.message
               : "Could not load the report review.",
           );
           setSelectedIntake(null);
-          setLoadedDetailId(selectedIntakeId);
+          setLoadedDetailId(requestIntakeId);
         }
       });
     return () => {
@@ -242,15 +326,35 @@ export default function ReportsPage() {
     [persons, selectedPersonId],
   );
 
+  function selectIntake(intakeId: string | null) {
+    if (
+      selectionContextRef.current.personId === selectedPersonId &&
+      selectionContextRef.current.intakeId === intakeId
+    ) {
+      setSelectedIntakeId(intakeId);
+      return;
+    }
+    setSelectionContext(selectedPersonId, intakeId);
+    setSelectedIntakeId(intakeId);
+    clearReviewState();
+    setUploading(false);
+    setSaving(false);
+    setConfirming(false);
+    setError("");
+    setMessage("");
+  }
+
   function selectPerson(personId: string) {
+    setSelectionContext(personId, null);
     setSelectedPersonId(personId);
     setIntakes([]);
     setSelectedIntakeId(null);
-    setSelectedIntake(null);
-    setConfirmedReport(null);
+    clearReviewState();
     setLoadedIntakePersonId(null);
-    setLoadedDetailId(null);
-    setDirty(false);
+    setSelectedFile(null);
+    setUploading(false);
+    setSaving(false);
+    setConfirming(false);
     setError("");
     setMessage("");
   }
@@ -279,7 +383,14 @@ export default function ReportsPage() {
 
   async function uploadReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedPersonId || !selectedFile) {
+    const requestPersonId = selectedPersonId;
+    const requestFile = selectedFile;
+    const requestContext = { ...selectionContextRef.current };
+    if (
+      !requestPersonId ||
+      !requestFile ||
+      requestContext.personId !== requestPersonId
+    ) {
       setError("Choose a PDF, JPEG, or PNG report file first.");
       return;
     }
@@ -288,9 +399,13 @@ export default function ReportsPage() {
     setMessage("");
     try {
       const detail = await api.createReportIntake(
-        selectedPersonId,
-        selectedFile,
+        requestPersonId,
+        requestFile,
       );
+      if (!isCurrentSelection(requestContext)) {
+        return;
+      }
+      setUploading(false);
       setSelectedFile(null);
       const fileInput = document.getElementById(
         "report-file",
@@ -302,20 +417,26 @@ export default function ReportsPage() {
         detail,
         ...current.filter((intake) => intake.id !== detail.id),
       ]);
+      setSelectionContext(requestPersonId, detail.id);
       setSelectedIntakeId(detail.id);
+      clearReviewState();
       setMessage(
         detail.status === "pending_review"
           ? "Report extracted. Review every candidate before confirming."
           : (detail.error_message ?? "The report could not be extracted."),
       );
     } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Could not upload the report.",
-      );
+      if (isCurrentSelection(requestContext)) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Could not upload the report.",
+        );
+      }
     } finally {
-      setUploading(false);
+      if (isCurrentSelection(requestContext)) {
+        setUploading(false);
+      }
     }
   }
 
@@ -324,6 +445,8 @@ export default function ReportsPage() {
     if (
       !selectedPersonId ||
       !selectedIntake ||
+      selectionContextRef.current.personId !== selectedPersonId ||
+      selectionContextRef.current.intakeId !== selectedIntake.id ||
       selectedIntake.status !== "pending_review"
     ) {
       return;
@@ -336,19 +459,25 @@ export default function ReportsPage() {
       setError("Enter the report date before saving.");
       return;
     }
+    const requestPersonId = selectedPersonId;
+    const requestIntakeId = selectedIntake.id;
+    const requestContext = { ...selectionContextRef.current };
     try {
       const candidateEdits = observations.map(toApiObservation);
       setSaving(true);
       setError("");
       const detail = await api.updateReportIntake(
-        selectedPersonId,
-        selectedIntake.id,
+        requestPersonId,
+        requestIntakeId,
         {
           source_name: sourceName.trim(),
           reported_at: `${reportedAt}T00:00:00Z`,
           observations: candidateEdits,
         },
       );
+      if (!isCurrentSelection(requestContext)) {
+        return;
+      }
       setSelectedIntake(detail);
       setIntakes((current) =>
         current.map((intake) => (intake.id === detail.id ? detail : intake)),
@@ -358,11 +487,17 @@ export default function ReportsPage() {
       );
       setDirty(false);
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Could not save the review.",
-      );
+      if (isCurrentSelection(requestContext)) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Could not save the review.",
+        );
+      }
     } finally {
-      setSaving(false);
+      if (isCurrentSelection(requestContext)) {
+        setSaving(false);
+      }
     }
   }
 
@@ -370,31 +505,43 @@ export default function ReportsPage() {
     if (
       !selectedPersonId ||
       !selectedIntake ||
+      selectionContextRef.current.personId !== selectedPersonId ||
+      selectionContextRef.current.intakeId !== selectedIntake.id ||
       dirty ||
       selectedIntake.status !== "pending_review"
     ) {
       return;
     }
+    const requestPersonId = selectedPersonId;
+    const requestIntakeId = selectedIntake.id;
+    const requestContext = { ...selectionContextRef.current };
     setConfirming(true);
     setError("");
     try {
       const detail = await api.confirmReportIntake(
-        selectedPersonId,
-        selectedIntake.id,
+        requestPersonId,
+        requestIntakeId,
       );
+      if (!isCurrentSelection(requestContext)) {
+        return;
+      }
       setSelectedIntake(detail);
       setIntakes((current) =>
         current.map((intake) => (intake.id === detail.id ? detail : intake)),
       );
       setMessage("Report confirmed and added to Health History.");
     } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Could not confirm the report.",
-      );
+      if (isCurrentSelection(requestContext)) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Could not confirm the report.",
+        );
+      }
     } finally {
-      setConfirming(false);
+      if (isCurrentSelection(requestContext)) {
+        setConfirming(false);
+      }
     }
   }
 
@@ -410,8 +557,8 @@ export default function ReportsPage() {
         <button
           className="report-intake-select"
           type="button"
-          onClick={() => setSelectedIntakeId(intake.id)}
-          aria-pressed={selectedIntake?.id === intake.id}
+          onClick={() => selectIntake(intake.id)}
+          aria-pressed={selectedIntakeId === intake.id}
         >
           <span>
             <strong>{intake.source_name}</strong>

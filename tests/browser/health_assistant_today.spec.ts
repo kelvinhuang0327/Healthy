@@ -114,6 +114,16 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await metricForm.locator('input[name="heart_rate_bpm"]').fill("70");
   await metricForm.getByRole("button", { name: "Save metric" }).click();
   await expect(page.getByTestId("metric-list").getByTestId("metric-card")).toHaveCount(1);
+  const latestMetric = todaySection.getByTestId("today-latest-metric");
+  await expect(
+    latestMetric.getByTestId("today-latest-metric-recorded-at"),
+  ).toBeVisible();
+  await expect(latestMetric).toContainText("Heart rate: 70 bpm");
+  await expect(latestMetric).toContainText("Weight: 90 kg");
+  await expect(latestMetric).not.toContainText("Blood pressure");
+  await expect(latestMetric).not.toContainText("Steps:");
+  await expect(latestMetric).not.toContainText("Blood glucose:");
+  await expect(latestMetric).not.toContainText("Sleep duration:");
   await expect(todaySection.getByTestId("today-risk-alerts-empty")).toBeVisible();
 
   const heightProfile = page.getByTestId("height-profile");
@@ -139,8 +149,18 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await metricForm.locator('input[name="systolic_bp_mm_hg"]').fill("145");
   await metricForm.locator('input[name="diastolic_bp_mm_hg"]').fill("95");
   await metricForm.locator('input[name="heart_rate_bpm"]').fill("72");
+  await metricForm.locator('input[name="steps"]').fill("8000");
+  await metricForm.locator('input[name="sleep_hours"]').fill("7.5");
+  await metricForm.locator('input[name="note"]').fill("Recorded after resting.");
   await metricForm.getByRole("button", { name: "Save metric" }).click();
   await expect(page.getByTestId("metric-list").getByTestId("metric-card")).toHaveCount(2);
+  await expect(latestMetric).toContainText("Blood pressure: 145/95 mmHg");
+  await expect(latestMetric).toContainText("Heart rate: 72 bpm");
+  await expect(latestMetric).toContainText("Steps: 8000 steps");
+  await expect(latestMetric).toContainText("Sleep duration: 7.5 hours");
+  await expect(latestMetric).toContainText("Recorded after resting.");
+  await expect(latestMetric).not.toContainText("Weight:");
+  await expect(latestMetric).not.toContainText("Blood glucose:");
   await expect(riskAlerts).toHaveCount(2);
   await expect(riskAlerts.filter({ hasText: "BP_HIGH" })).toContainText(
     "Evidence: health_metric",

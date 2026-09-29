@@ -110,6 +110,7 @@ export default function Home() {
     useState<ExternalMetricCsvImportSummary | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
   const [error, setError] = useState("");
+  const latestMetric = assistantToday?.latest_metric ?? null;
 
   async function loadActionReminders(
     personId: string,
@@ -1507,12 +1508,61 @@ export default function Home() {
                   )}
 
                   <h3>Latest metric</h3>
-                  {assistantToday.latest_metric ? (
-                    <p data-testid="today-latest-metric">
-                      {new Date(
-                        assistantToday.latest_metric.recorded_at,
-                      ).toLocaleString()}
-                    </p>
+                  {latestMetric ? (
+                    <div data-testid="today-latest-metric">
+                      <p data-testid="today-latest-metric-recorded-at">
+                        {new Date(latestMetric.recorded_at).toLocaleString()}
+                      </p>
+                      <ul
+                        className="metric-values"
+                        data-testid="today-latest-metric-values"
+                      >
+                        {typeof latestMetric.systolic_bp_mm_hg === "number" &&
+                        typeof latestMetric.diastolic_bp_mm_hg === "number" ? (
+                          <li>
+                            Blood pressure: {latestMetric.systolic_bp_mm_hg}/
+                            {latestMetric.diastolic_bp_mm_hg} mmHg
+                          </li>
+                        ) : (
+                          <>
+                            {typeof latestMetric.systolic_bp_mm_hg === "number" ? (
+                              <li>
+                                Systolic blood pressure: {latestMetric.systolic_bp_mm_hg} mmHg
+                              </li>
+                            ) : null}
+                            {typeof latestMetric.diastolic_bp_mm_hg === "number" ? (
+                              <li>
+                                Diastolic blood pressure: {latestMetric.diastolic_bp_mm_hg} mmHg
+                              </li>
+                            ) : null}
+                          </>
+                        )}
+                        {typeof latestMetric.heart_rate_bpm === "number" ? (
+                          <li>
+                            Heart rate: {latestMetric.heart_rate_bpm} bpm
+                          </li>
+                        ) : null}
+                        {typeof latestMetric.steps === "number" ? (
+                          <li>Steps: {latestMetric.steps} steps</li>
+                        ) : null}
+                        {typeof latestMetric.weight_kg === "number" ? (
+                          <li>
+                            Weight: {latestMetric.weight_kg} kg
+                          </li>
+                        ) : null}
+                        {typeof latestMetric.blood_glucose_mg_dl === "number" ? (
+                          <li>
+                            Blood glucose: {latestMetric.blood_glucose_mg_dl} mg/dL
+                          </li>
+                        ) : null}
+                        {typeof latestMetric.sleep_hours === "number" ? (
+                          <li>
+                            Sleep duration: {latestMetric.sleep_hours} hours
+                          </li>
+                        ) : null}
+                      </ul>
+                      {latestMetric.note ? <p>{latestMetric.note}</p> : null}
+                    </div>
                   ) : (
                     <p data-testid="today-latest-metric-empty">
                       No health metric recorded yet.

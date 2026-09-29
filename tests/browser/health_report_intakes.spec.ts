@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 const password = "Synthetic-Only-Password-42";
 
@@ -50,6 +50,178 @@ function syntheticPdf(lines: string[]): Buffer {
     `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`,
   );
   return Buffer.from(chunks.join(""), "utf8");
+}
+
+function responseGate<T>(body: T): {
+  requested: Promise<void>;
+  release: () => void;
+  fulfill: (route: Route) => Promise<void>;
+} {
+  let markRequested!: () => void;
+  let releaseResponse!: () => void;
+  const requested = new Promise<void>((resolve) => {
+    markRequested = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  return {
+    requested,
+    release: () => releaseResponse(),
+    fulfill: async (route) => {
+      markRequested();
+      await released;
+      await route.fulfill({ json: body });
+    },
+  };
+}
+
+function intakeFixture(
+  personId: string,
+  intakeId: string,
+  sourceName: string,
+  status: "pending_review" | "confirmed",
+  reportId: string | null = null,
+) {
+  return {
+    id: intakeId,
+    person_id: personId,
+    source_filename: `${sourceName}.pdf`,
+    source_name: sourceName,
+    file_sha256: `${intakeId}-sha256`,
+    media_type: "application/pdf",
+    extraction_method: "digital_pdf",
+    parser_metadata: { parser: "synthetic-browser" },
+    status,
+    pending_review: status === "pending_review",
+    reported_at: "2026-09-01T00:00:00Z",
+    error_message: null,
+    report_id: reportId,
+    created_at: "2026-09-01T00:00:00Z",
+    updated_at: "2026-09-01T00:00:00Z",
+    confirmed_at: status === "confirmed" ? "2026-09-02T00:00:00Z" : null,
+  };
+}
+
+function intakeDetailFixture(
+  personId: string,
+  intakeId: string,
+  sourceName: string,
+  status: "pending_review" | "confirmed",
+  reportId: string | null = null,
+) {
+  return {
+    ...intakeFixture(personId, intakeId, sourceName, status, reportId),
+    observations: [
+      {
+        id: `${intakeId}-observation`,
+        intake_id: intakeId,
+        ordinal: 0,
+        code: "GLUCOSE",
+        display_name: "Glucose",
+        value_numeric: 92,
+        value_text: null,
+        unit: "mg/dL",
+        reference_range: "65-99",
+        observed_at: "2026-09-01T00:00:00Z",
+        parser_provenance: "digital_pdf_text",
+        parser_confidence: null,
+        created_at: "2026-09-01T00:00:00Z",
+        updated_at: "2026-09-01T00:00:00Z",
+      },
+    ],
+  };
+}
+
+function healthReportFixture(
+  personId: string,
+  reportId: string,
+  sourceName: string,
+  observationName: string,
+) {
+  return {
+    id: reportId,
+    person_id: personId,
+    schema_version: "healthy.health-report.v1",
+    source_name: sourceName,
+    reported_at: "2026-09-01T00:00:00Z",
+    canonical_sha256: `${reportId}-sha256`,
+    status: "confirmed",
+    created_at: "2026-09-01T00:00:00Z",
+    confirmed_at: "2026-09-02T00:00:00Z",
+    observations: [
+      {
+        id: `${reportId}-observation`,
+        report_id: reportId,
+        person_id: personId,
+        code: "GLUCOSE",
+        display_name: observationName,
+        value_numeric: 92,
+        value_text: null,
+        unit: "mg/dL",
+        reference_range: "65-99",
+        observed_at: "2026-09-01T00:00:00Z",
+        created_at: "2026-09-01T00:00:00Z",
+      },
+    ],
+  };
+}
+
+function routePath(route: Route): string {
+  return new URL(route.request().url()).pathname;
+}
+
+function routePersonId(route: Route): string {
+  return routePath(route).split("/")[4] ?? "";
+}
+
+function routeIntakeId(route: Route): string {
+  return routePath(route).split("/")[6] ?? "";
+}
+
+async function prepareTwoReportPeople(page: Page): Promise<{
+  primaryPersonId: string;
+  secondaryPersonId: string;
+}> {
+  const marker = Date.now();
+  await register(
+    page,
+    `report-isolation-${marker}@example.com`,
+    "Primary Report Person",
+  );
+
+  const primaryPerson = page.getByTestId("person-card").first();
+  await primaryPerson.click();
+  const primaryPersonId = await primaryPerson.getAttribute("data-person-id");
+  if (!primaryPersonId) {
+    throw new Error("Primary synthetic Person id was not rendered.");
+  }
+
+  await page
+    .getByTestId("person-form")
+    .getByLabel("Display name")
+    .fill("Secondary Report Person");
+  await page
+    .getByTestId("person-form")
+    .getByLabel("Relationship")
+    .selectOption("family");
+  await page.getByRole("button", { name: "Create Person" }).click();
+
+  const secondaryPerson = page.getByTestId("person-card").filter({
+    hasText: "Secondary Report Person",
+  });
+  await expect(secondaryPerson).toBeVisible();
+  const secondaryPersonId = await secondaryPerson.getAttribute("data-person-id");
+  if (!secondaryPersonId) {
+    throw new Error("Secondary synthetic Person id was not rendered.");
+  }
+  return { primaryPersonId, secondaryPersonId };
+}
+
+async function openReportsForPerson(page: Page, personId: string): Promise<void> {
+  await page.goto(`/reports?person_id=${encodeURIComponent(personId)}`);
+  await expect(page.getByTestId("reports-page")).toBeVisible();
+  await expect(page.getByTestId("reports-person-select")).toHaveValue(personId);
 }
 
 test("upload, review, persistence, and explicit canonical confirmation", async ({
@@ -203,4 +375,345 @@ test("report navigation stays isolated to the selected Person", async ({
   await page.getByTestId("reports-person-select").selectOption(otherPersonId as string);
   await expect(page.getByTestId("reports-person-select")).toHaveValue(otherPersonId as string);
   await expect(page.getByTestId("confirmed-health-report")).toBeVisible();
+});
+
+test("ignores a late confirmed-report detail after switching Person", async ({
+  page,
+}) => {
+  const { primaryPersonId, secondaryPersonId } =
+    await prepareTwoReportPeople(page);
+  const primaryIntake = intakeFixture(
+    primaryPersonId,
+    "intake-late-a",
+    "Person A confirmed report",
+    "confirmed",
+    "report-late-a",
+  );
+  const secondaryIntake = intakeFixture(
+    secondaryPersonId,
+    "intake-late-b",
+    "Person B confirmed report",
+    "confirmed",
+    "report-late-b",
+  );
+  const primaryDetail = intakeDetailFixture(
+    primaryPersonId,
+    "intake-late-a",
+    "Person A confirmed report",
+    "confirmed",
+    "report-late-a",
+  );
+  const secondaryDetail = intakeDetailFixture(
+    secondaryPersonId,
+    "intake-late-b",
+    "Person B confirmed report",
+    "confirmed",
+    "report-late-b",
+  );
+  const primaryReport = healthReportFixture(
+    primaryPersonId,
+    "report-late-a",
+    "Person A confirmed report",
+    "Person A glucose marker",
+  );
+  const secondaryReport = healthReportFixture(
+    secondaryPersonId,
+    "report-late-b",
+    "Person B confirmed report",
+    "Person B glucose marker",
+  );
+  const primaryReportGate = responseGate(primaryReport);
+
+  await page.route("**/api/v1/persons/*/report-intakes", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      json:
+        routePersonId(route) === primaryPersonId
+          ? [primaryIntake]
+          : [secondaryIntake],
+    });
+  });
+  await page.route("**/api/v1/persons/*/report-intakes/*", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    const intakeId = routeIntakeId(route);
+    if (intakeId === "intake-late-a") {
+      await route.fulfill({ json: primaryDetail });
+      return;
+    }
+    if (intakeId === "intake-late-b") {
+      await route.fulfill({ json: secondaryDetail });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route("**/api/v1/persons/*/reports/*", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    if (routePath(route).endsWith("/reports/report-late-a")) {
+      await primaryReportGate.fulfill(route);
+      return;
+    }
+    if (routePath(route).endsWith("/reports/report-late-b")) {
+      await route.fulfill({ json: secondaryReport });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await openReportsForPerson(page, primaryPersonId);
+  await primaryReportGate.requested;
+
+  await page
+    .getByTestId("reports-person-select")
+    .selectOption(secondaryPersonId);
+  const confirmedCard = page.getByTestId("confirmed-health-report");
+  await expect(confirmedCard).toContainText("Person B confirmed report");
+  await expect(confirmedCard).toContainText("Person B glucose marker");
+
+  primaryReportGate.release();
+  await expect(confirmedCard).toContainText("Person B glucose marker");
+  await expect(confirmedCard).not.toContainText("Person A glucose marker");
+});
+
+test("ignores an upload response after switching Person", async ({ page }) => {
+  const { primaryPersonId, secondaryPersonId } =
+    await prepareTwoReportPeople(page);
+  const uploadedIntake = intakeDetailFixture(
+    primaryPersonId,
+    "intake-upload-a",
+    "Person A uploaded report",
+    "pending_review",
+  );
+  const uploadGate = responseGate(uploadedIntake);
+  let uploadRequests = 0;
+
+  await page.route("**/api/v1/persons/*/report-intakes", async (route) => {
+    const method = route.request().method();
+    if (method === "GET") {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    if (method === "POST" && routePersonId(route) === primaryPersonId) {
+      uploadRequests += 1;
+      await uploadGate.fulfill(route);
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route("**/api/v1/persons/*/report-intakes/*", async (route) => {
+    if (
+      route.request().method() === "GET" &&
+      routeIntakeId(route) === "intake-upload-a"
+    ) {
+      await route.fulfill({ json: uploadedIntake });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await openReportsForPerson(page, primaryPersonId);
+  await expect(page.getByTestId("report-intake-empty")).toBeVisible();
+  await page.getByTestId("report-file-input").setInputFiles({
+    name: "late-upload.pdf",
+    mimeType: "application/pdf",
+    buffer: syntheticPdf(["Source: Person A", "Glucose: 92 mg/dL"]),
+  });
+  await page.getByTestId("report-upload-button").click();
+  await uploadGate.requested;
+
+  await page
+    .getByTestId("reports-person-select")
+    .selectOption(secondaryPersonId);
+  await expect(page.getByTestId("reports-person-select")).toHaveValue(
+    secondaryPersonId,
+  );
+  await expect(page.getByTestId("report-intake-empty")).toBeVisible();
+
+  uploadGate.release();
+  await expect(page.getByTestId("report-intake-empty")).toBeVisible();
+  await expect(page.getByTestId("report-intake-card")).toHaveCount(0);
+  await expect(page.getByTestId("report-review-section")).toHaveCount(0);
+  expect(uploadRequests).toBe(1);
+});
+
+test("ignores a late save response after switching intake", async ({ page }) => {
+  const { primaryPersonId } = await prepareTwoReportPeople(page);
+  const primaryA = intakeDetailFixture(
+    primaryPersonId,
+    "intake-save-a",
+    "Person A save target",
+    "pending_review",
+  );
+  const primaryB = intakeDetailFixture(
+    primaryPersonId,
+    "intake-save-b",
+    "Person B save target",
+    "pending_review",
+  );
+  const saveGate = responseGate(primaryA);
+  let saveRequests = 0;
+
+  await page.route("**/api/v1/persons/*/report-intakes", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      json:
+        routePersonId(route) === primaryPersonId
+          ? [primaryA, primaryB]
+          : [],
+    });
+  });
+  await page.route("**/api/v1/persons/*/report-intakes/*", async (route) => {
+    const method = route.request().method();
+    const intakeId = routeIntakeId(route);
+    if (method === "GET" && intakeId === "intake-save-a") {
+      await route.fulfill({ json: primaryA });
+      return;
+    }
+    if (method === "GET" && intakeId === "intake-save-b") {
+      await route.fulfill({ json: primaryB });
+      return;
+    }
+    if (
+      method === "PATCH" &&
+      routePersonId(route) === primaryPersonId &&
+      intakeId === "intake-save-a"
+    ) {
+      saveRequests += 1;
+      await saveGate.fulfill(route);
+      return;
+    }
+    await route.fallback();
+  });
+
+  await openReportsForPerson(page, primaryPersonId);
+  await expect(page.getByTestId("report-source-name")).toHaveValue(
+    "Person A save target",
+  );
+  await page.getByTestId("report-review-save").click();
+  await saveGate.requested;
+
+  const secondaryIntakeCard = page.locator(
+    '[data-testid="report-intake-card"][data-intake-id="intake-save-b"]',
+  );
+  await secondaryIntakeCard.getByRole("button").click();
+  await expect(page.getByTestId("report-source-name")).toHaveValue(
+    "Person B save target",
+  );
+  await expect(secondaryIntakeCard.getByRole("button")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  saveGate.release();
+  await expect(page.getByTestId("report-source-name")).toHaveValue(
+    "Person B save target",
+  );
+  await expect(secondaryIntakeCard.getByRole("button")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByTestId("report-intake-message")).toHaveCount(0);
+  expect(saveRequests).toBe(1);
+});
+
+test("does not target an old review while a new Person intake loads", async ({
+  page,
+}) => {
+  const { primaryPersonId, secondaryPersonId } =
+    await prepareTwoReportPeople(page);
+  const primaryIntake = intakeFixture(
+    primaryPersonId,
+    "intake-confirm-a",
+    "Person A confirm target",
+    "pending_review",
+  );
+  const primaryDetail = intakeDetailFixture(
+    primaryPersonId,
+    "intake-confirm-a",
+    "Person A confirm target",
+    "pending_review",
+  );
+  const confirmedDetail = intakeDetailFixture(
+    primaryPersonId,
+    "intake-confirm-a",
+    "Person A confirmed stale response",
+    "confirmed",
+    "report-confirm-a",
+  );
+  const confirmGate = responseGate(confirmedDetail);
+  const secondaryIntakesGate = responseGate([]);
+  let confirmRequests = 0;
+
+  await page.route("**/api/v1/persons/*/report-intakes", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    if (routePersonId(route) === secondaryPersonId) {
+      await secondaryIntakesGate.fulfill(route);
+      return;
+    }
+    await route.fulfill({ json: [primaryIntake] });
+  });
+  await page.route("**/api/v1/persons/*/report-intakes/*", async (route) => {
+    if (
+      route.request().method() === "GET" &&
+      routeIntakeId(route) === "intake-confirm-a"
+    ) {
+      await route.fulfill({ json: primaryDetail });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route(
+    "**/api/v1/persons/*/report-intakes/*/confirm",
+    async (route) => {
+      if (
+        route.request().method() === "POST" &&
+        routePersonId(route) === primaryPersonId &&
+        routeIntakeId(route) === "intake-confirm-a"
+      ) {
+        confirmRequests += 1;
+        await confirmGate.fulfill(route);
+        return;
+      }
+      await route.fallback();
+    },
+  );
+
+  await openReportsForPerson(page, primaryPersonId);
+  await expect(page.getByTestId("report-source-name")).toHaveValue(
+    "Person A confirm target",
+  );
+  await page.getByTestId("report-review-confirm").click();
+  await confirmGate.requested;
+
+  await page
+    .getByTestId("reports-person-select")
+    .selectOption(secondaryPersonId);
+  await secondaryIntakesGate.requested;
+  await expect(page.getByTestId("report-review-section")).toHaveCount(0);
+  await expect(page.getByTestId("report-review-confirm")).toHaveCount(0);
+
+  confirmGate.release();
+  await expect(page.getByTestId("report-review-section")).toHaveCount(0);
+  await expect(page.getByTestId("confirmed-health-report")).toHaveCount(0);
+  await expect(page.getByTestId("report-intake-card")).toHaveCount(0);
+
+  secondaryIntakesGate.release();
+  await expect(page.getByTestId("report-intake-empty")).toBeVisible();
+  await expect(page.getByTestId("report-review-section")).toHaveCount(0);
+  await expect(page.getByTestId("confirmed-health-report")).toHaveCount(0);
+  expect(confirmRequests).toBe(1);
 });

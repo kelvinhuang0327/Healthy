@@ -28,6 +28,11 @@ test("selected Person can backdate symptoms and see a newest-first timeline", as
   await page.getByTestId("person-card").first().click();
   await expect(page.getByTestId("selected-person-pill")).toBeVisible();
 
+  const timeline = page.getByTestId("symptom-list");
+  await expect(timeline.getByTestId("symptom-empty-state")).toHaveText(
+    "No symptoms recorded yet.",
+  );
+
   const symptomForm = page.getByTestId("symptom-form");
   await symptomForm.getByLabel("Symptom").fill("Headache");
   await symptomForm.locator('input[name="occurred_at"]').fill("2026-07-20T09:30");
@@ -38,8 +43,8 @@ test("selected Person can backdate symptoms and see a newest-first timeline", as
   await symptomForm.getByLabel("Note").fill("Backdated first symptom");
   await symptomForm.getByRole("button", { name: "Save symptom" }).click();
 
-  const timeline = page.getByTestId("symptom-list");
   await expect(timeline.getByTestId("symptom-card")).toHaveCount(1);
+  await expect(timeline.getByTestId("symptom-empty-state")).toHaveCount(0);
   await expect(timeline.getByTestId("symptom-card").first()).toContainText("Headache");
   await expect(timeline.getByTestId("symptom-card").first()).toContainText("Severity 2/5");
   await expect(timeline.getByTestId("symptom-card").first()).toContainText("45 minutes");

@@ -1066,6 +1066,11 @@ export default function Home() {
             <article className="card">
               <h2>Actions for {selectedPerson.display_name}</h2>
               <ul className="metrics" data-testid="action-list">
+                {healthActions.length === 0 ? (
+                  <li className="metric" data-testid="action-empty-state">
+                    No actions recorded yet.
+                  </li>
+                ) : null}
                 {healthActions.map((action) => (
                   <li
                     className="metric"
@@ -1245,6 +1250,11 @@ export default function Home() {
             <article className="card">
               <h2>Symptom timeline for {selectedPerson.display_name}</h2>
               <ul className="metrics" data-testid="symptom-list">
+                {symptomLogs.length === 0 ? (
+                  <li className="metric" data-testid="symptom-empty-state">
+                    No symptoms recorded yet.
+                  </li>
+                ) : null}
                 {symptomLogs.map((symptomLog) => (
                   <li
                     className="metric"
@@ -1393,6 +1403,11 @@ export default function Home() {
             <article className="card">
               <h2>Health metric history for {selectedPerson.display_name}</h2>
               <ul className="metrics" data-testid="metric-list">
+                {metrics.length === 0 ? (
+                  <li className="metric" data-testid="metric-empty-state">
+                    No health metrics recorded yet.
+                  </li>
+                ) : null}
                 {metrics.map((metric) => (
                   <li
                     className="metric"

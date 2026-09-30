@@ -38,6 +38,11 @@ test("selected Person can log a health metric and see it in newest-first history
   await expect(page.getByTestId("selected-person-pill")).toBeVisible();
   await expect(page.getByTestId("health-score-status")).toHaveText("stable");
 
+  const metricList = page.getByTestId("metric-list");
+  await expect(metricList.getByTestId("metric-empty-state")).toHaveText(
+    "No health metrics recorded yet.",
+  );
+
   const form = page.getByTestId("metric-form");
   await form.locator('input[name="recorded_at"]').fill("2026-08-09T08:30");
   await form.locator('input[name="systolic_bp_mm_hg"]').fill("120");
@@ -50,8 +55,8 @@ test("selected Person can log a health metric and see it in newest-first history
   await form.locator('input[name="note"]').fill("After breakfast");
   await form.getByRole("button", { name: "Save metric" }).click();
 
-  const metricList = page.getByTestId("metric-list");
   await expect(metricList.getByTestId("metric-card")).toHaveCount(1);
+  await expect(metricList.getByTestId("metric-empty-state")).toHaveCount(0);
   const firstCard = metricList.getByTestId("metric-card").first();
   await expect(firstCard).toContainText("120/80 mmHg");
   await expect(firstCard).toContainText("72 bpm");

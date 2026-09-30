@@ -77,6 +77,15 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
 
   const todaySection = page.getByTestId("today-section");
   await expect(todaySection.getByTestId("today-latest-metric-empty")).toBeVisible();
+  await expect(todaySection.getByTestId("today-symptoms-empty")).toHaveText(
+    "No recent symptoms recorded.",
+  );
+  await expect(todaySection.getByTestId("today-actions-empty")).toHaveText(
+    "No open or recently completed actions.",
+  );
+  await expect(todaySection.getByTestId("today-outcomes-empty")).toHaveText(
+    "No recent outcomes recorded.",
+  );
   const initialAttention = todaySection.getByTestId("daily-attention-item");
   await expect(initialAttention).toHaveCount(1);
   await expect(initialAttention.first()).toHaveAttribute(
@@ -190,6 +199,7 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await outcomeForm.getByLabel("Note").fill("Felt noticeably better.");
   await outcomeForm.getByRole("button", { name: "Save outcome" }).click();
 
+  await expect(todaySection.getByTestId("today-symptoms-empty")).toHaveCount(0);
   await expect(todaySection.getByTestId("today-symptom-card")).toHaveCount(2);
   await expect(todaySection.getByTestId("today-symptom-card").first()).toContainText(
     "Backdated headache",
@@ -198,6 +208,8 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   const todayActionText = await todaySection.getByTestId("today-action-list").innerText();
   expect(todayActionText).toContain("done");
   expect(todayActionText).toContain("todo");
+  await expect(todaySection.getByTestId("today-actions-empty")).toHaveCount(0);
+  await expect(todaySection.getByTestId("today-outcomes-empty")).toHaveCount(0);
   await expect(todaySection.getByTestId("today-outcome-card")).toHaveCount(1);
   await expect(todaySection.getByTestId("today-outcome-card").first()).toContainText(
     "Felt noticeably better.",

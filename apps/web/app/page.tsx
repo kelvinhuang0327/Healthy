@@ -1728,33 +1728,51 @@ export default function Home() {
                   )}
 
                   <h3>Recent symptoms</h3>
-                  <ul data-testid="today-symptom-list">
-                    {assistantToday.recent_symptoms.map((symptom) => (
-                      <li key={symptom.id} data-testid="today-symptom-card">
-                        {symptom.symptom} &middot;{" "}
-                        {new Date(symptom.occurred_at).toLocaleString()}
-                      </li>
-                    ))}
-                  </ul>
+                  {assistantToday.recent_symptoms.length === 0 ? (
+                    <p data-testid="today-symptoms-empty">
+                      No recent symptoms recorded.
+                    </p>
+                  ) : (
+                    <ul data-testid="today-symptom-list">
+                      {assistantToday.recent_symptoms.map((symptom) => (
+                        <li key={symptom.id} data-testid="today-symptom-card">
+                          {symptom.symptom} &middot;{" "}
+                          {new Date(symptom.occurred_at).toLocaleString()}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
                   <h3>Open or recently completed actions</h3>
-                  <ul data-testid="today-action-list">
-                    {assistantToday.open_or_recent_actions.map((action) => (
-                      <li key={action.id} data-testid="today-action-card">
-                        {action.title} &middot; {action.status}
-                      </li>
-                    ))}
-                  </ul>
+                  {assistantToday.open_or_recent_actions.length === 0 ? (
+                    <p data-testid="today-actions-empty">
+                      No open or recently completed actions.
+                    </p>
+                  ) : (
+                    <ul data-testid="today-action-list">
+                      {assistantToday.open_or_recent_actions.map((action) => (
+                        <li key={action.id} data-testid="today-action-card">
+                          {action.title} &middot; {action.status}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
                   <h3>Recent outcomes</h3>
-                  <ul data-testid="today-outcome-list">
-                    {assistantToday.recent_outcomes.map((outcome) => (
-                      <li key={outcome.id} data-testid="today-outcome-card">
-                        {outcome.note} &middot;{" "}
-                        {new Date(outcome.observed_at).toLocaleString()}
-                      </li>
-                    ))}
-                  </ul>
+                  {assistantToday.recent_outcomes.length === 0 ? (
+                    <p data-testid="today-outcomes-empty">
+                      No recent outcomes recorded.
+                    </p>
+                  ) : (
+                    <ul data-testid="today-outcome-list">
+                      {assistantToday.recent_outcomes.map((outcome) => (
+                        <li key={outcome.id} data-testid="today-outcome-card">
+                          {outcome.note} &middot;{" "}
+                          {new Date(outcome.observed_at).toLocaleString()}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
                   <h3>Daily Attention Guidance</h3>
                   <ul data-testid="daily-attention-list">

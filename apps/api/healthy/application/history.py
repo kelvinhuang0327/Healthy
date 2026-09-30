@@ -141,7 +141,7 @@ def build_history(
                 title="Action outcome",
                 primary_value=outcome.note,
                 unit=None,
-                detail=None,
+                detail=f"Action: {outcome.action.title}",
                 source=HistorySource(type="action_outcome", id=outcome.id),
                 created_at=outcome.created_at,
             )

@@ -166,6 +166,7 @@ test("Health History shows mixed sources in order and filters by type", async ({
   await expect(historyItems.nth(0)).toHaveAttribute("data-history-kind", "action_outcome");
   await expect(historyItems.nth(0)).toContainText("Action outcome");
   await expect(historyItems.nth(0)).toContainText(outcomeNote);
+  await expect(historyItems.nth(0)).toContainText("Action: Evening walk");
   const displayedOutcomeAt = await historyItems
     .nth(0)
     .locator("time")

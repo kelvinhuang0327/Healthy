@@ -18,6 +18,16 @@ async function register(
   await expect(page.getByText("Session active")).toBeVisible();
 }
 
+async function localDateTimeForUtc(page: Page, instant: Date): Promise<string> {
+  return page.evaluate((utcInstant) => {
+    const utcDate = new Date(utcInstant);
+    const localDate = new Date(
+      utcDate.getTime() - utcDate.getTimezoneOffset() * 60_000,
+    );
+    return localDate.toISOString().slice(0, 16);
+  }, instant.toISOString());
+}
+
 function syntheticPdf(lines: string[]): Buffer {
   const commands = lines.map((line, index) => {
     const escaped = line
@@ -60,15 +70,20 @@ test("Health History shows mixed sources in order and filters by type", async ({
   await page.getByTestId("person-card").first().click();
   await expect(page.getByTestId("selected-person-pill")).toBeVisible();
 
-  const metricTime = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 16);
-  const symptomTime = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 16);
   const reportDate = new Date(Date.now() - 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
+  const reportAt = new Date(`${reportDate}T00:00:00Z`);
+  const metricTime = await localDateTimeForUtc(
+    page,
+    new Date(reportAt.getTime() - 48 * 60 * 60 * 1000),
+  );
+  const symptomTime = await localDateTimeForUtc(
+    page,
+    new Date(reportAt.getTime() - 24 * 60 * 60 * 1000),
+  );
+  const outcomeAt = new Date(reportAt.getTime() + 12 * 60 * 60 * 1000);
+  const outcomeTime = await localDateTimeForUtc(page, outcomeAt);
 
   const symptomForm = page.getByTestId("symptom-form");
   await symptomForm.getByLabel("Symptom").fill("History headache");
@@ -82,6 +97,24 @@ test("Health History shows mixed sources in order and filters by type", async ({
   await metricForm.locator('input[name="heart_rate_bpm"]').fill("72");
   await metricForm.getByRole("button", { name: "Save metric" }).click();
   await expect(page.getByTestId("metric-list").getByTestId("metric-card")).toHaveCount(1);
+
+  const actionForm = page.getByTestId("action-form");
+  await actionForm.getByLabel("Title").fill("Evening walk");
+  await actionForm.getByRole("button", { name: "Create action" }).click();
+  const actionCard = page.getByTestId("action-list").getByTestId("action-card");
+  await expect(actionCard).toHaveCount(1);
+  await actionCard.getByRole("button", { name: "Complete action" }).click();
+  await expect(actionCard).toHaveAttribute("data-action-status", "done");
+
+  const outcomeNote = "After the evening walk, I felt more rested.";
+  const outcomeForm = page.getByTestId("outcome-form");
+  await expect(outcomeForm).toBeVisible();
+  await outcomeForm.locator('input[name="observed_at"]').fill(outcomeTime);
+  await outcomeForm.getByLabel("Note").fill(outcomeNote);
+  await outcomeForm.getByRole("button", { name: "Save outcome" }).click();
+  await expect(
+    page.getByTestId("today-outcome-card").filter({ hasText: outcomeNote }),
+  ).toHaveCount(1);
 
   await page.getByTestId("reports-link").click();
   await expect(page.getByTestId("reports-page")).toBeVisible();
@@ -129,23 +162,32 @@ test("Health History shows mixed sources in order and filters by type", async ({
   await expect(page.getByRole("heading", { name: "Health History" })).toBeVisible();
 
   const historyItems = page.getByTestId("history-item");
-  await expect(historyItems).toHaveCount(3);
-  await expect(historyItems.nth(0)).toHaveAttribute("data-history-kind", "report_observation");
-  await expect(historyItems.nth(0)).toContainText("Confirmed history glucose");
-  await expect(historyItems.nth(0)).toContainText("Confirmed History Lab");
-  await expect(historyItems.nth(1)).toHaveAttribute("data-history-kind", "symptom");
-  await expect(historyItems.nth(1)).toContainText("History headache");
-  await expect(historyItems.nth(2)).toHaveAttribute("data-history-kind", "metric");
-  await expect(historyItems.nth(2)).toContainText("72 bpm");
+  await expect(historyItems).toHaveCount(4);
+  await expect(historyItems.nth(0)).toHaveAttribute("data-history-kind", "action_outcome");
+  await expect(historyItems.nth(0)).toContainText("Action outcome");
+  await expect(historyItems.nth(0)).toContainText(outcomeNote);
+  const displayedOutcomeAt = await historyItems
+    .nth(0)
+    .locator("time")
+    .getAttribute("datetime");
+  expect(new Date(displayedOutcomeAt ?? "").toISOString()).toBe(outcomeAt.toISOString());
+  await expect(historyItems.nth(1)).toHaveAttribute("data-history-kind", "report_observation");
+  await expect(historyItems.nth(1)).toContainText("Confirmed history glucose");
+  await expect(historyItems.nth(1)).toContainText("Confirmed History Lab");
+  await expect(historyItems.nth(2)).toHaveAttribute("data-history-kind", "symptom");
+  await expect(historyItems.nth(2)).toContainText("History headache");
+  await expect(historyItems.nth(3)).toHaveAttribute("data-history-kind", "metric");
+  await expect(historyItems.nth(3)).toContainText("72 bpm");
   await expect(page.getByText("Pending history glucose")).toHaveCount(0);
 
+  await page.getByTestId("history-filter-action_outcome").click();
+  await expect(historyItems).toHaveCount(1);
+  await expect(historyItems.first()).toContainText(outcomeNote);
   await page.getByTestId("history-filter-report_observation").click();
-  await expect(page.getByTestId("history-item")).toHaveCount(1);
-  await expect(page.getByTestId("history-item").first()).toContainText(
-    "Confirmed history glucose",
-  );
+  await expect(historyItems).toHaveCount(1);
+  await expect(historyItems.first()).toContainText("Confirmed history glucose");
   await page.getByTestId("history-filter-all").click();
-  await expect(page.getByTestId("history-item")).toHaveCount(3);
+  await expect(historyItems).toHaveCount(4);
 });
 
 test("empty Health History shows an explicit empty state", async ({ page }) => {

@@ -55,11 +55,16 @@ def _create_symptom(client: TestClient, person_id: str, **overrides: object):
     )
 
 
-def _create_done_action(client: TestClient, person_id: str) -> str:
+def _create_done_action(
+    client: TestClient,
+    person_id: str,
+    *,
+    title: str = "Evening walk",
+) -> str:
     created = client.post(
         f"/v1/persons/{person_id}/actions",
         headers=csrf_headers(client),
-        json={"title": "Evening walk"},
+        json={"title": title},
     )
     assert created.status_code == 201
     action_id = created.json()["id"]
@@ -237,7 +242,7 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
     assert outcome_item["title"] == "Action outcome"
     assert outcome_item["primary_value"] == "After the walk I felt more rested."
     assert outcome_item["unit"] is None
-    assert outcome_item["detail"] is None
+    assert outcome_item["detail"] == "Action: Evening walk"
     assert outcome_item["source"] == {
         "type": "action_outcome",
         "id": outcome.json()["id"],
@@ -317,11 +322,25 @@ def test_history_preserves_person_isolation(client: TestClient) -> None:
     other = TestClient(client.app, base_url=ORIGIN)
     assert register(other, email="history-owner-b@example.com").status_code == 201
     person_b = _person_id(other)
+    action_id_b = _create_done_action(other, person_b, title="Morning stretch")
+    outcome_b = _create_outcome(
+        other,
+        person_b,
+        action_id_b,
+        note="Owner B action outcome",
+        observed_at=datetime.now(UTC).isoformat(),
+    )
+    assert outcome_b.status_code == 201
     assert other.get(f"/v1/persons/{person_a}/history").status_code == 404
-    assert other.get(f"/v1/persons/{person_b}/history").json() == []
+    other_history = other.get(f"/v1/persons/{person_b}/history").json()
+    assert len(other_history) == 1
+    assert other_history[0]["primary_value"] == "Owner B action outcome"
+    assert other_history[0]["detail"] == "Action: Morning stretch"
     owner_history = client.get(f"/v1/persons/{person_a}/history").json()
     assert owner_history[0]["kind"] == "action_outcome"
     assert owner_history[0]["primary_value"] == "Owner A action outcome"
+    assert owner_history[0]["detail"] == "Action: Evening walk"
+    assert all(item["primary_value"] != "Owner B action outcome" for item in owner_history)
     assert owner_history[1]["primary_value"] == "Owner A symptom"
 
 

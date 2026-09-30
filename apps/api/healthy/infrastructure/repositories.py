@@ -843,6 +843,7 @@ class HealthActionOutcomeRepository:
         statement = (
             select(HealthActionOutcome)
             .join(HealthAction, HealthAction.id == HealthActionOutcome.action_id)
+            .options(selectinload(HealthActionOutcome.action))
             .where(
                 HealthAction.person_id == person_id,
                 HealthActionOutcome.observed_at >= since,

@@ -6,6 +6,7 @@ from conftest import DATABASE_URL, ORIGIN, csrf_headers, register
 from fastapi.testclient import TestClient
 from healthy.infrastructure.database import Database
 from healthy.infrastructure.models import (
+    HealthActionOutcome,
     HealthMetric,
     HealthReportModel,
     HealthReportObservationModel,
@@ -51,6 +52,37 @@ def _create_symptom(client: TestClient, person_id: str, **overrides: object):
         f"/v1/persons/{person_id}/symptoms",
         headers=csrf_headers(client),
         json=payload,
+    )
+
+
+def _create_done_action(client: TestClient, person_id: str) -> str:
+    created = client.post(
+        f"/v1/persons/{person_id}/actions",
+        headers=csrf_headers(client),
+        json={"title": "Evening walk"},
+    )
+    assert created.status_code == 201
+    action_id = created.json()["id"]
+    completed = client.post(
+        f"/v1/persons/{person_id}/actions/{action_id}/complete",
+        headers=csrf_headers(client),
+    )
+    assert completed.status_code == 200
+    return action_id
+
+
+def _create_outcome(
+    client: TestClient,
+    person_id: str,
+    action_id: str,
+    *,
+    note: str,
+    observed_at: str,
+):
+    return client.post(
+        f"/v1/persons/{person_id}/actions/{action_id}/outcomes",
+        headers=csrf_headers(client),
+        json={"note": note, "observed_at": observed_at},
     )
 
 
@@ -143,6 +175,14 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         steps=6000,
         sleep_hours=7.25,
     )
+    action_id = _create_done_action(client, person_id)
+    outcome = _create_outcome(
+        client,
+        person_id,
+        action_id,
+        note="After the walk I felt more rested.",
+        observed_at="2026-08-04T08:00:00Z",
+    )
     pending = client.post(
         f"/v1/persons/{person_id}/reports",
         headers=csrf_headers(client),
@@ -165,7 +205,7 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         observed_at="2026-08-05T08:00:00Z",
         value_numeric=95.5,
     )
-    assert symptom.status_code == metric.status_code == 201
+    assert symptom.status_code == metric.status_code == outcome.status_code == 201
     assert pending.status_code == 201
 
     response = client.get(f"/v1/persons/{person_id}/history")
@@ -174,14 +214,15 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
 
     assert [item["kind"] for item in history] == [
         "report_observation",
+        "action_outcome",
         "symptom",
         "metric",
     ]
-    assert len(history) == 3
+    assert len(history) == 4
     assert "PENDING_GLUCOSE" not in response.text
     assert "raw_json" not in response.text
 
-    report_item, symptom_item, metric_item = history
+    report_item, outcome_item, symptom_item, metric_item = history
     assert report_item["title"] == "Confirmed glucose"
     assert report_item["primary_value"] == "95.5"
     assert report_item["unit"] == "mg/dL"
@@ -190,6 +231,18 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         "id": confirmed["observations"][0]["id"],
         "report_id": confirmed["id"],
         "report_source_name": "Confirmed Lab",
+    }
+    assert outcome_item["id"] == outcome.json()["id"]
+    assert outcome_item["occurred_at"] == "2026-08-04T08:00:00Z"
+    assert outcome_item["title"] == "Action outcome"
+    assert outcome_item["primary_value"] == "After the walk I felt more rested."
+    assert outcome_item["unit"] is None
+    assert outcome_item["detail"] is None
+    assert outcome_item["source"] == {
+        "type": "action_outcome",
+        "id": outcome.json()["id"],
+        "report_id": None,
+        "report_source_name": None,
     }
     assert symptom_item["primary_value"] == "Backdated headache"
     assert symptom_item["detail"] == "Severity 3/5 · After breakfast"
@@ -251,15 +304,25 @@ def test_history_preserves_person_isolation(client: TestClient) -> None:
     person_a = _person_id(client)
     created = _create_symptom(client, person_a, symptom="Owner A symptom")
     assert created.status_code == 201
+    action_id = _create_done_action(client, person_a)
+    outcome = _create_outcome(
+        client,
+        person_a,
+        action_id,
+        note="Owner A action outcome",
+        observed_at=datetime.now(UTC).isoformat(),
+    )
+    assert outcome.status_code == 201
 
     other = TestClient(client.app, base_url=ORIGIN)
     assert register(other, email="history-owner-b@example.com").status_code == 201
     person_b = _person_id(other)
     assert other.get(f"/v1/persons/{person_a}/history").status_code == 404
     assert other.get(f"/v1/persons/{person_b}/history").json() == []
-    assert client.get(f"/v1/persons/{person_a}/history").json()[0]["primary_value"] == (
-        "Owner A symptom"
-    )
+    owner_history = client.get(f"/v1/persons/{person_a}/history").json()
+    assert owner_history[0]["kind"] == "action_outcome"
+    assert owner_history[0]["primary_value"] == "Owner A action outcome"
+    assert owner_history[1]["primary_value"] == "Owner A symptom"
 
 
 def test_history_get_is_zero_write_and_does_not_change_today_semantics(
@@ -279,6 +342,15 @@ def test_history_get_is_zero_write_and_does_not_change_today_semantics(
         observed_at="2026-08-07T08:00:00Z",
         value_numeric=90.0,
     )
+    action_id = _create_done_action(client, person_id)
+    outcome = _create_outcome(
+        client,
+        person_id,
+        action_id,
+        note="Stable outcome",
+        observed_at=datetime.now(UTC).isoformat(),
+    )
+    assert outcome.status_code == 201
 
     database = Database(DATABASE_URL)
 
@@ -333,6 +405,16 @@ def test_history_get_is_zero_write_and_does_not_change_today_semantics(
                             HealthReportObservationModel.observed_at,
                             HealthReportObservationModel.created_at,
                         ).order_by(HealthReportObservationModel.id)
+                    ).tuples()
+                ),
+                list(
+                    database_session.execute(
+                        select(
+                            HealthActionOutcome.id,
+                            HealthActionOutcome.note,
+                            HealthActionOutcome.observed_at,
+                            HealthActionOutcome.created_at,
+                        ).order_by(HealthActionOutcome.id)
                     ).tuples()
                 ),
             )

@@ -1179,6 +1179,11 @@ def get_health_history(
             database_session,
             person.id,
         ),
+        HealthActionOutcomeRepository.list_since_for_person(
+            database_session,
+            person.id,
+            datetime.min.replace(tzinfo=UTC),
+        ),
     )
 
 

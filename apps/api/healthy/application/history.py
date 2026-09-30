@@ -6,12 +6,13 @@ from datetime import datetime
 from typing import Literal
 
 from healthy.infrastructure.models import (
+    HealthActionOutcome,
     HealthMetric,
     HealthReportObservationModel,
     SymptomLog,
 )
 
-HistoryKind = Literal["symptom", "metric", "report_observation"]
+HistoryKind = Literal["symptom", "metric", "report_observation", "action_outcome"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +79,7 @@ def build_history(
     metrics: list[HealthMetric],
     symptoms: list[SymptomLog],
     report_observations: list[HealthReportObservationModel],
+    outcomes: list[HealthActionOutcome],
 ) -> list[HistoryItem]:
     items = [
         *[
@@ -130,6 +132,20 @@ def build_history(
                 created_at=observation.created_at,
             )
             for observation in report_observations
+        ],
+        *[
+            HistoryItem(
+                id=outcome.id,
+                kind="action_outcome",
+                occurred_at=outcome.observed_at,
+                title="Action outcome",
+                primary_value=outcome.note,
+                unit=None,
+                detail=None,
+                source=HistorySource(type="action_outcome", id=outcome.id),
+                created_at=outcome.created_at,
+            )
+            for outcome in outcomes
         ],
     ]
     items.sort(

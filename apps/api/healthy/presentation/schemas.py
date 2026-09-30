@@ -579,7 +579,7 @@ class AssistantTodaySummary(BaseModel):
 
 
 class HistorySourceSummary(BaseModel):
-    type: Literal["symptom", "metric", "report_observation"]
+    type: Literal["symptom", "metric", "report_observation", "action_outcome"]
     id: uuid.UUID
     report_id: uuid.UUID | None = None
     report_source_name: str | None = None
@@ -587,7 +587,7 @@ class HistorySourceSummary(BaseModel):
 
 class HealthHistoryItemSummary(BaseModel):
     id: uuid.UUID
-    kind: Literal["symptom", "metric", "report_observation"]
+    kind: Literal["symptom", "metric", "report_observation", "action_outcome"]
     occurred_at: datetime
     title: str
     primary_value: str | None

@@ -31,6 +31,11 @@ test("selected Person actions reload from the API and complete idempotently", as
   await page.getByTestId("person-card").first().click();
   await expect(page.getByTestId("selected-person-pill")).toBeVisible();
 
+  const actionList = page.getByTestId("action-list");
+  await expect(actionList.getByTestId("action-empty-state")).toHaveText(
+    "No actions recorded yet.",
+  );
+
   const form = page.getByTestId("action-form");
   const dueAtLocal = "2026-08-01T18:30";
   await form.getByLabel("Title").fill("Evening walk");
@@ -38,8 +43,8 @@ test("selected Person actions reload from the API and complete idempotently", as
   await form.getByLabel("Due at").fill(dueAtLocal);
   await form.getByRole("button", { name: "Create action" }).click();
 
-  const actionList = page.getByTestId("action-list");
   await expect(actionList.getByTestId("action-card")).toHaveCount(1);
+  await expect(actionList.getByTestId("action-empty-state")).toHaveCount(0);
   let actionCard = actionList.getByTestId("action-card").first();
   await expect(actionCard).toContainText("Evening walk");
   await expect(actionCard).toContainText("Walk around the neighborhood");

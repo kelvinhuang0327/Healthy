@@ -1172,12 +1172,18 @@ def get_health_history(
     person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
     if person is None:
         return None
+    all_time_since = datetime.min.replace(tzinfo=UTC)
     return build_history(
         HealthMetricRepository.list_for_person(database_session, person.id),
         SymptomLogRepository.list_for_person(database_session, person.id),
         HealthReportRepository.list_confirmed_observations_for_person(
             database_session,
             person.id,
+        ),
+        HealthActionOutcomeRepository.list_since_for_person(
+            database_session,
+            person.id,
+            all_time_since,
         ),
     )
 

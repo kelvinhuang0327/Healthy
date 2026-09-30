@@ -17,12 +17,14 @@ const filterLabels: Record<HistoryFilter, string> = {
   symptom: "Symptoms",
   metric: "Metrics",
   report_observation: "Reports",
+  action_outcome: "Outcomes",
 };
 
 const kindLabels: Record<HealthHistoryKind, string> = {
   symptom: "Symptom",
   metric: "Metric",
   report_observation: "Report observation",
+  action_outcome: "Action outcome",
 };
 
 export default function HealthHistoryPage() {
@@ -98,8 +100,8 @@ export default function HealthHistoryPage() {
         </Link>
         <h1>Health History</h1>
         <p className="lede">
-          A read-only timeline of symptoms, metrics, and confirmed report
-          observations for the selected Person.
+          A read-only timeline of symptoms, metrics, action outcomes, and
+          confirmed report observations for the selected Person.
         </p>
       </header>
 

@@ -246,7 +246,11 @@ export type AssistantToday = {
   insights: Insight[];
 };
 
-export type HealthHistoryKind = "symptom" | "metric" | "report_observation";
+export type HealthHistoryKind =
+  | "symptom"
+  | "metric"
+  | "report_observation"
+  | "action_outcome";
 
 export type HealthHistoryItem = {
   id: string;

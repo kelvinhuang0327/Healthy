@@ -1027,7 +1027,8 @@
             "enum": [
               "symptom",
               "metric",
-              "report_observation"
+              "report_observation",
+              "action_outcome"
             ],
             "title": "Kind",
             "type": "string"
@@ -1737,7 +1738,8 @@
             "enum": [
               "symptom",
               "metric",
-              "report_observation"
+              "report_observation",
+              "action_outcome"
             ],
             "title": "Type",
             "type": "string"

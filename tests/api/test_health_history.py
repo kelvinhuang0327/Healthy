@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from conftest import DATABASE_URL, ORIGIN, csrf_headers, register
 from fastapi.testclient import TestClient
 from healthy.infrastructure.database import Database
 from healthy.infrastructure.models import (
+    HealthAction,
+    HealthActionOutcome,
     HealthMetric,
     HealthReportModel,
     HealthReportObservationModel,
@@ -52,6 +54,34 @@ def _create_symptom(client: TestClient, person_id: str, **overrides: object):
         headers=csrf_headers(client),
         json=payload,
     )
+
+
+def _record_action_outcome(
+    client: TestClient,
+    person_id: str,
+    *,
+    note: str,
+    observed_at: str,
+) -> dict[str, object]:
+    action_response = client.post(
+        f"/v1/persons/{person_id}/actions",
+        headers=csrf_headers(client),
+        json={"title": "History action"},
+    )
+    assert action_response.status_code == 201
+    action_id = action_response.json()["id"]
+    completed = client.post(
+        f"/v1/persons/{person_id}/actions/{action_id}/complete",
+        headers=csrf_headers(client),
+    )
+    assert completed.status_code == 200
+    response = client.post(
+        f"/v1/persons/{person_id}/actions/{action_id}/outcomes",
+        headers=csrf_headers(client),
+        json={"note": note, "observed_at": observed_at},
+    )
+    assert response.status_code == 201
+    return response.json()
 
 
 def _report_payload(
@@ -126,19 +156,25 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
 ) -> None:
     assert register(client).status_code == 201
     person_id = _person_id(client)
+    now = datetime.now(UTC)
+    metric_at = (now - timedelta(days=37)).isoformat()
+    symptom_at = (now - timedelta(days=36)).isoformat()
+    outcome_at = (now - timedelta(days=35)).isoformat()
+    confirmed_at = (now - timedelta(days=34)).isoformat()
+    pending_at = (now - timedelta(days=33)).isoformat()
 
     symptom = _create_symptom(
         client,
         person_id,
         symptom="Backdated headache",
-        occurred_at="2026-08-03T08:00:00Z",
+        occurred_at=symptom_at,
         severity=3,
         note="After breakfast",
     )
     metric = _create_metric(
         client,
         person_id,
-        recorded_at="2026-08-02T08:00:00Z",
+        recorded_at=metric_at,
         heart_rate_bpm=72,
         steps=6000,
         sleep_hours=7.25,
@@ -148,10 +184,10 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         headers=csrf_headers(client),
         json=_report_payload(
             source_name="Pending Lab",
-            reported_at="2026-08-04T08:00:00Z",
+            reported_at=pending_at,
             code="PENDING_GLUCOSE",
             display_name="Pending glucose",
-            observed_at="2026-08-04T08:00:00Z",
+            observed_at=pending_at,
             value_numeric=101.0,
         ),
     )
@@ -159,11 +195,18 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         client,
         person_id,
         source_name="Confirmed Lab",
-        reported_at="2026-08-05T08:00:00Z",
+        reported_at=confirmed_at,
         code="CONFIRMED_GLUCOSE",
         display_name="Confirmed glucose",
-        observed_at="2026-08-05T08:00:00Z",
+        observed_at=confirmed_at,
         value_numeric=95.5,
+    )
+    outcome_note = "The walk made it easier to unwind."
+    outcome = _record_action_outcome(
+        client,
+        person_id,
+        note=outcome_note,
+        observed_at=outcome_at,
     )
     assert symptom.status_code == metric.status_code == 201
     assert pending.status_code == 201
@@ -174,14 +217,15 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
 
     assert [item["kind"] for item in history] == [
         "report_observation",
+        "action_outcome",
         "symptom",
         "metric",
     ]
-    assert len(history) == 3
+    assert len(history) == 4
     assert "PENDING_GLUCOSE" not in response.text
     assert "raw_json" not in response.text
 
-    report_item, symptom_item, metric_item = history
+    report_item, outcome_item, symptom_item, metric_item = history
     assert report_item["title"] == "Confirmed glucose"
     assert report_item["primary_value"] == "95.5"
     assert report_item["unit"] == "mg/dL"
@@ -190,6 +234,21 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         "id": confirmed["observations"][0]["id"],
         "report_id": confirmed["id"],
         "report_source_name": "Confirmed Lab",
+    }
+    assert outcome_item == {
+        "id": outcome["id"],
+        "kind": "action_outcome",
+        "occurred_at": outcome["observed_at"],
+        "title": "Action outcome",
+        "primary_value": outcome_note,
+        "unit": None,
+        "detail": None,
+        "source": {
+            "type": "action_outcome",
+            "id": outcome["id"],
+            "report_id": None,
+            "report_source_name": None,
+        },
     }
     assert symptom_item["primary_value"] == "Backdated headache"
     assert symptom_item["detail"] == "Severity 3/5 · After breakfast"
@@ -204,6 +263,9 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
     assert metric_item["source"]["id"] == metric.json()["id"]
     assert confirmed_detail["status"] == "confirmed"
     assert confirmed["id"] == confirmed_detail["id"] == report_item["source"]["report_id"]
+    today = client.get(f"/v1/persons/{person_id}/assistant/today")
+    assert today.status_code == 200
+    assert outcome_note not in [item["note"] for item in today.json()["recent_outcomes"]]
 
 
 def test_history_tied_timestamps_are_deterministic_across_reads(client: TestClient) -> None:
@@ -238,12 +300,18 @@ def test_history_tied_timestamps_are_deterministic_across_reads(client: TestClie
         observed_at=tied_at,
         value_numeric=88.0,
     )
+    _record_action_outcome(
+        client,
+        person_id,
+        note="Tied action outcome",
+        observed_at=tied_at,
+    )
 
     first = client.get(f"/v1/persons/{person_id}/history")
     second = client.get(f"/v1/persons/{person_id}/history")
     assert first.status_code == second.status_code == 200
     assert first.json() == second.json()
-    assert len(first.json()) == 3
+    assert len(first.json()) == 4
 
 
 def test_history_preserves_person_isolation(client: TestClient) -> None:
@@ -251,15 +319,22 @@ def test_history_preserves_person_isolation(client: TestClient) -> None:
     person_a = _person_id(client)
     created = _create_symptom(client, person_a, symptom="Owner A symptom")
     assert created.status_code == 201
+    _record_action_outcome(
+        client,
+        person_a,
+        note="Owner A action outcome",
+        observed_at=datetime.now(UTC).isoformat(),
+    )
 
     other = TestClient(client.app, base_url=ORIGIN)
     assert register(other, email="history-owner-b@example.com").status_code == 201
     person_b = _person_id(other)
     assert other.get(f"/v1/persons/{person_a}/history").status_code == 404
     assert other.get(f"/v1/persons/{person_b}/history").json() == []
-    assert client.get(f"/v1/persons/{person_a}/history").json()[0]["primary_value"] == (
-        "Owner A symptom"
-    )
+    owner_a_values = {
+        item["primary_value"] for item in client.get(f"/v1/persons/{person_a}/history").json()
+    }
+    assert owner_a_values == {"Owner A symptom", "Owner A action outcome"}
 
 
 def test_history_get_is_zero_write_and_does_not_change_today_semantics(
@@ -269,6 +344,12 @@ def test_history_get_is_zero_write_and_does_not_change_today_semantics(
     person_id = _person_id(client)
     assert _create_metric(client, person_id, heart_rate_bpm=72).status_code == 201
     assert _create_symptom(client, person_id, symptom="Stable symptom").status_code == 201
+    _record_action_outcome(
+        client,
+        person_id,
+        note="Stable action outcome",
+        observed_at=datetime.now(UTC).isoformat(),
+    )
     _create_confirmed_report(
         client,
         person_id,
@@ -295,6 +376,26 @@ def test_history_get_is_zero_write_and_does_not_change_today_semantics(
                         select(SessionRecord.id, SessionRecord.expires_at).order_by(
                             SessionRecord.id
                         )
+                    ).tuples()
+                ),
+                list(
+                    database_session.execute(
+                        select(
+                            HealthAction.id,
+                            HealthAction.status,
+                            HealthAction.completed_at,
+                            HealthAction.updated_at,
+                        ).order_by(HealthAction.id)
+                    ).tuples()
+                ),
+                list(
+                    database_session.execute(
+                        select(
+                            HealthActionOutcome.id,
+                            HealthActionOutcome.note,
+                            HealthActionOutcome.observed_at,
+                            HealthActionOutcome.created_at,
+                        ).order_by(HealthActionOutcome.id)
                     ).tuples()
                 ),
                 list(

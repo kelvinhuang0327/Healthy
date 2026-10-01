@@ -178,7 +178,11 @@ function HealthAnalyticsContent() {
                 >
                   <div className="session">
                     <h2>{summary.label}</h2>
-                    <span className="pill">{directionLabel(summary.direction)}</span>
+                    <span className="pill">
+                      {summary.points === 1
+                        ? "Not enough data for trend"
+                        : directionLabel(summary.direction)}
+                    </span>
                   </div>
                   {summary.points === 0 ? (
                     <p className="history-empty" data-testid="analytics-no-data">
@@ -191,10 +195,12 @@ function HealthAnalyticsContent() {
                       </p>
                       <p className="history-provenance">{summary.points} data point(s)</p>
                       <p className="history-provenance">
-                        Change from first to latest: {formatPercent(summary.change_percent)}
+                        Change from first to latest: {summary.points === 1
+                          ? "Not available"
+                          : formatPercent(summary.change_percent)}
                       </p>
                       <p className="history-provenance">
-                        Daily change: {summary.slope_per_day === null
+                        Daily change: {summary.points === 1 || summary.slope_per_day === null
                           ? "Not available"
                           : `${formatNumber(summary.slope_per_day)} ${summary.unit}/day`}
                       </p>

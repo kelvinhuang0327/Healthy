@@ -44,12 +44,31 @@ test("Health Analytics shows deterministic summaries for recorded metrics", asyn
     '[data-testid="analytics-card"][data-analytics-metric="heart_rate_bpm"]',
   );
   await expect(heartRateCard).toContainText("Latest: 72 bpm");
-  await expect(heartRateCard).toContainText("Stable");
+  await expect(heartRateCard).toContainText("Not enough data for trend");
   await expect(heartRateCard).toContainText("1 data point(s)");
+  await expect(heartRateCard).toContainText(
+    "Change from first to latest: Not available",
+  );
+  await expect(heartRateCard).toContainText("Daily change: Not available");
 
   await page.getByTestId("analytics-period").selectOption("365");
   await expect(page.getByTestId("analytics-period")).toHaveValue("365");
   await expect(heartRateCard).toContainText("Latest: 72 bpm");
+
+  await page.getByRole("link", { name: "Back to Today" }).click();
+  await page.getByTestId("person-card").first().click();
+  const nextMetricForm = page.getByTestId("metric-form");
+  await nextMetricForm
+    .locator('input[name="recorded_at"]')
+    .fill(new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString().slice(0, 16));
+  await nextMetricForm.locator('input[name="heart_rate_bpm"]').fill("76");
+  await nextMetricForm.getByRole("button", { name: "Save metric" }).click();
+  await expect(page.getByTestId("metric-card")).toHaveCount(2);
+
+  await page.getByTestId("analytics-link").click();
+  await expect(page).toHaveURL(/\/analytics\?person_id=/);
+  await expect(heartRateCard).toContainText("Increasing");
+  await expect(heartRateCard).toContainText("2 data point(s)");
 });
 
 test("empty Health Analytics shows an explicit empty state", async ({ page }) => {

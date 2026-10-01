@@ -1751,7 +1751,7 @@ export default function Home() {
                     <ul data-testid="today-symptom-list">
                       {assistantToday.recent_symptoms.map((symptom) => (
                         <li key={symptom.id} data-testid="today-symptom-card">
-                          {symptom.symptom} &middot;{" "}
+                          {symptom.symptom} &middot; Severity: {symptom.severity}/5 &middot;{" "}
                           {new Date(symptom.occurred_at).toLocaleString()}
                         </li>
                       ))}

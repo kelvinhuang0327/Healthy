@@ -107,6 +107,7 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
     .locator('input[name="occurred_at"]')
     .fill(recentSymptomTimestamp);
   await symptomForm.getByLabel("Severity (1-5)").fill("3");
+  await symptomForm.getByLabel("Duration (minutes, optional)").fill("45");
   await symptomForm.getByRole("button", { name: "Save symptom" }).click();
   await expect(page.getByTestId("symptom-list").getByTestId("symptom-card")).toHaveCount(1);
 
@@ -224,9 +225,11 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await expect(todaySymptomCards).toHaveCount(2);
   await expect(todaySymptomCards.first()).toContainText("Backdated headache");
   await expect(todaySymptomCards.first()).toContainText("Severity: 3/5");
+  await expect(todaySymptomCards.first()).toContainText("Duration: 45 minutes");
   await expect(todaySymptomCards.first()).toContainText(/\d{1,2}\/\d{1,2}\/\d{4}/);
   await expect(todaySymptomCards.nth(1)).toContainText("Backdated headache");
   await expect(todaySymptomCards.nth(1)).toContainText("Severity: 2/5");
+  await expect(todaySymptomCards.nth(1)).not.toContainText("Duration:");
   await expect(todaySymptomCards.nth(1)).toContainText(/\d{1,2}\/\d{1,2}\/\d{4}/);
   await expect(todaySection.getByTestId("today-action-card")).toHaveCount(3);
   const completedTodayAction = todaySection

@@ -200,10 +200,14 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await outcomeForm.getByRole("button", { name: "Save outcome" }).click();
 
   await expect(todaySection.getByTestId("today-symptoms-empty")).toHaveCount(0);
-  await expect(todaySection.getByTestId("today-symptom-card")).toHaveCount(2);
-  await expect(todaySection.getByTestId("today-symptom-card").first()).toContainText(
-    "Backdated headache",
-  );
+  const todaySymptomCards = todaySection.getByTestId("today-symptom-card");
+  await expect(todaySymptomCards).toHaveCount(2);
+  await expect(todaySymptomCards.first()).toContainText("Backdated headache");
+  await expect(todaySymptomCards.first()).toContainText("Severity: 3/5");
+  await expect(todaySymptomCards.first()).toContainText(/\d{1,2}\/\d{1,2}\/\d{4}/);
+  await expect(todaySymptomCards.nth(1)).toContainText("Backdated headache");
+  await expect(todaySymptomCards.nth(1)).toContainText("Severity: 2/5");
+  await expect(todaySymptomCards.nth(1)).toContainText(/\d{1,2}\/\d{1,2}\/\d{4}/);
   await expect(todaySection.getByTestId("today-action-card")).toHaveCount(2);
   const todayActionText = await todaySection.getByTestId("today-action-list").innerText();
   expect(todayActionText).toContain("done");

@@ -1768,6 +1768,18 @@ export default function Home() {
                       {assistantToday.open_or_recent_actions.map((action) => (
                         <li key={action.id} data-testid="today-action-card">
                           {action.title} &middot; {action.status}
+                          {action.status === "done" && action.completed_at ? (
+                            <span>
+                              {" "}&middot; Completed{" "}
+                              {new Date(action.completed_at).toLocaleString()}
+                            </span>
+                          ) : null}
+                          {action.status === "todo" && action.due_at ? (
+                            <span>
+                              {" "}&middot; Due{" "}
+                              {new Date(action.due_at).toLocaleString()}
+                            </span>
+                          ) : null}
                         </li>
                       ))}
                     </ul>

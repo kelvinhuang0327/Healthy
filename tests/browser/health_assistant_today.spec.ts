@@ -180,6 +180,15 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   );
 
   const actionForm = page.getByTestId("action-form");
+  const dueAtLocal = await page.evaluate(() => {
+    const date = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  });
+  const expectedDueAt = await page.evaluate(
+    (value) => new Date(value).toLocaleString(),
+    dueAtLocal,
+  );
   await actionForm.getByLabel("Title").fill("Evening walk");
   await actionForm.getByRole("button", { name: "Create action" }).click();
   const actionList = page.getByTestId("action-list");
@@ -189,10 +198,21 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   });
   await completedCard.getByRole("button", { name: "Complete action" }).click();
   await expect(completedCard).toContainText("Status: done");
+  const completedAt = await completedCard.getAttribute("data-completed-at");
+  expect(completedAt).toBeTruthy();
+  const expectedCompletedAt = await page.evaluate(
+    (value) => new Date(value).toLocaleString(),
+    completedAt as string,
+  );
 
   await actionForm.getByLabel("Title").fill("Track blood pressure");
+  await actionForm.locator('input[name="due_at"]').fill(dueAtLocal);
   await actionForm.getByRole("button", { name: "Create action" }).click();
   await expect(actionList.getByTestId("action-card")).toHaveCount(2);
+
+  await actionForm.getByLabel("Title").fill("Unscheduled action");
+  await actionForm.getByRole("button", { name: "Create action" }).click();
+  await expect(actionList.getByTestId("action-card")).toHaveCount(3);
 
   const outcomeForm = page.getByTestId("outcome-form");
   await expect(outcomeForm).toBeVisible();
@@ -208,7 +228,25 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await expect(todaySymptomCards.nth(1)).toContainText("Backdated headache");
   await expect(todaySymptomCards.nth(1)).toContainText("Severity: 2/5");
   await expect(todaySymptomCards.nth(1)).toContainText(/\d{1,2}\/\d{1,2}\/\d{4}/);
-  await expect(todaySection.getByTestId("today-action-card")).toHaveCount(2);
+  await expect(todaySection.getByTestId("today-action-card")).toHaveCount(3);
+  const completedTodayAction = todaySection
+    .getByTestId("today-action-card")
+    .filter({ hasText: "Evening walk" });
+  await expect(completedTodayAction).toContainText(
+    `Completed ${expectedCompletedAt}`,
+  );
+  await expect(completedTodayAction).not.toContainText("Due ");
+  const dueTodayAction = todaySection
+    .getByTestId("today-action-card")
+    .filter({ hasText: "Track blood pressure" });
+  await expect(dueTodayAction).toContainText(`Due ${expectedDueAt}`);
+  await expect(dueTodayAction).not.toContainText("Completed ");
+  const unscheduledTodayAction = todaySection
+    .getByTestId("today-action-card")
+    .filter({ hasText: "Unscheduled action" });
+  await expect(unscheduledTodayAction).toContainText("Unscheduled action · todo");
+  await expect(unscheduledTodayAction).not.toContainText("Due ");
+  await expect(unscheduledTodayAction).not.toContainText("Completed ");
   const todayActionText = await todaySection.getByTestId("today-action-list").innerText();
   expect(todayActionText).toContain("done");
   expect(todayActionText).toContain("todo");
@@ -411,6 +449,9 @@ test("generic email reminder preference is explicit and reload-safe", async ({
   const marker = Date.now();
   await register(page, `email-preference-owner-${marker}@example.com`, "Email Preference Owner");
   await page.getByTestId("person-card").first().click();
+  await expect(page.getByTestId("today-actions-empty")).toHaveText(
+    "No open or recently completed actions.",
+  );
 
   const actionForm = page.getByTestId("action-form");
   await actionForm.getByLabel("Title").fill("Private reminder action");

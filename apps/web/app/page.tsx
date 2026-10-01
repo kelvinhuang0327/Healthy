@@ -1780,12 +1780,23 @@ export default function Home() {
                     </p>
                   ) : (
                     <ul data-testid="today-outcome-list">
-                      {assistantToday.recent_outcomes.map((outcome) => (
-                        <li key={outcome.id} data-testid="today-outcome-card">
-                          {outcome.note} &middot;{" "}
-                          {new Date(outcome.observed_at).toLocaleString()}
-                        </li>
-                      ))}
+                      {assistantToday.recent_outcomes.map((outcome) => {
+                        const actionTitle = healthActions.find(
+                          (action) => action.id === outcome.action_id,
+                        )?.title;
+                        return (
+                          <li key={outcome.id} data-testid="today-outcome-card">
+                            {actionTitle ? (
+                              <>
+                                <span>Action: {actionTitle}</span>
+                                <br />
+                              </>
+                            ) : null}
+                            {outcome.note} &middot;{" "}
+                            {new Date(outcome.observed_at).toLocaleString()}
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
 

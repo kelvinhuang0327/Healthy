@@ -211,9 +211,10 @@ test("unified Today view aggregates records and shows evidence-linked guidance",
   await expect(todaySection.getByTestId("today-actions-empty")).toHaveCount(0);
   await expect(todaySection.getByTestId("today-outcomes-empty")).toHaveCount(0);
   await expect(todaySection.getByTestId("today-outcome-card")).toHaveCount(1);
-  await expect(todaySection.getByTestId("today-outcome-card").first()).toContainText(
-    "Felt noticeably better.",
-  );
+  const outcomeCard = todaySection.getByTestId("today-outcome-card").first();
+  await expect(outcomeCard).toContainText("Action: Evening walk");
+  await expect(outcomeCard).toContainText("Felt noticeably better.");
+  await expect(outcomeCard).toContainText(/\d{1,2}\/\d{1,2}\/\d{4}/);
   await expect(todaySection.getByTestId("today-latest-metric")).toBeVisible();
 
   const attentionKinds = await todaySection

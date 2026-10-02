@@ -1760,6 +1760,12 @@ export default function Home() {
                           )}
                           {" "}&middot;{" "}
                           {new Date(symptom.occurred_at).toLocaleString()}
+                          {symptom.note ? (
+                            <>
+                              <br />
+                              Note: {symptom.note}
+                            </>
+                          ) : null}
                         </li>
                       ))}
                     </ul>

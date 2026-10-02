@@ -44,6 +44,7 @@ test("Health Analytics shows deterministic summaries for recorded metrics", asyn
     '[data-testid="analytics-card"][data-analytics-metric="heart_rate_bpm"]',
   );
   await expect(heartRateCard).toContainText("Latest: 72 bpm");
+  await expect(heartRateCard).not.toContainText("First:");
   await expect(heartRateCard).toContainText("Not enough data for trend");
   await expect(heartRateCard).toContainText("1 data point(s)");
   await expect(heartRateCard).toContainText(
@@ -67,8 +68,12 @@ test("Health Analytics shows deterministic summaries for recorded metrics", asyn
 
   await page.getByTestId("analytics-link").click();
   await expect(page).toHaveURL(/\/analytics\?person_id=/);
+  await expect(heartRateCard).toContainText("First: 72 bpm");
+  await expect(heartRateCard).toContainText("Latest: 76 bpm");
   await expect(heartRateCard).toContainText("Increasing");
   await expect(heartRateCard).toContainText("2 data point(s)");
+  await expect(heartRateCard).toContainText("Change from first to latest: +5.6%");
+  await expect(heartRateCard).toContainText("Daily change: 8 bpm/day");
 });
 
 test("empty Health Analytics shows an explicit empty state", async ({ page }) => {
@@ -79,4 +84,5 @@ test("empty Health Analytics shows an explicit empty state", async ({ page }) =>
   await expect(page.getByTestId("analytics-grid")).toBeVisible();
   await expect(page.getByTestId("analytics-card")).toHaveCount(7);
   await expect(page.getByTestId("analytics-no-data")).toHaveCount(7);
+  await expect(page.getByText(/^First:/)).toHaveCount(0);
 });

@@ -190,6 +190,11 @@ function HealthAnalyticsContent() {
                     </p>
                   ) : (
                     <>
+                      {summary.points >= 2 && summary.first_value !== null ? (
+                        <p className="history-value">
+                          First: {formatNumber(summary.first_value)} {summary.unit}
+                        </p>
+                      ) : null}
                       <p className="history-value">
                         Latest: {formatNumber(summary.last_value ?? 0)} {summary.unit}
                       </p>

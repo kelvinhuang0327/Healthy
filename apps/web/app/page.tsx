@@ -1528,6 +1528,9 @@ export default function Home() {
                       <p data-testid="today-latest-metric-recorded-at">
                         {new Date(latestMetric.recorded_at).toLocaleString()}
                       </p>
+                      <p data-testid="today-latest-metric-source">
+                        Source: {latestMetric.source_type === "external_csv" ? "Imported CSV" : "Manual"}
+                      </p>
                       <ul
                         className="metric-values"
                         data-testid="today-latest-metric-values"

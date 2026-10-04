@@ -44,6 +44,19 @@ export type HealthMetric = {
   created_at: string;
 };
 
+export type HealthMetricInput = Pick<
+  HealthMetric,
+  | "recorded_at"
+  | "systolic_bp_mm_hg"
+  | "diastolic_bp_mm_hg"
+  | "heart_rate_bpm"
+  | "steps"
+  | "weight_kg"
+  | "blood_glucose_mg_dl"
+  | "sleep_hours"
+  | "note"
+>;
+
 export type ExternalMetricCsvImportSummary = {
   source_type: "external_csv";
   total_rows: number;
@@ -145,6 +158,17 @@ export type SymptomLog = {
   note: string | null;
   created_at: string;
 };
+
+export type SymptomLogInput = Pick<
+  SymptomLog,
+  | "symptom"
+  | "occurred_at"
+  | "severity"
+  | "duration_minutes"
+  | "estimated_start_date"
+  | "estimated_duration_days"
+  | "note"
+>;
 
 export type HealthAction = {
   id: string;
@@ -457,6 +481,15 @@ export const api = {
     }),
   healthMetrics: (personId: string) =>
     request<HealthMetric[]>(`/persons/${personId}/metrics`),
+  updateHealthMetric: (
+    personId: string,
+    metricId: string,
+    payload: HealthMetricInput,
+  ) =>
+    request<HealthMetric>(`/persons/${personId}/metrics/${metricId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   healthScore: (personId: string) =>
     request<HealthScore>(`/persons/${personId}/health-score`),
   riskAlerts: (personId: string) =>
@@ -484,17 +517,7 @@ export const api = {
     ),
   createHealthMetric: (
     personId: string,
-    payload: {
-      recorded_at: string;
-      systolic_bp_mm_hg: number | null;
-      diastolic_bp_mm_hg: number | null;
-      heart_rate_bpm: number | null;
-      steps: number | null;
-      weight_kg: number | null;
-      blood_glucose_mg_dl: number | null;
-      sleep_hours: number | null;
-      note: string | null;
-    },
+    payload: HealthMetricInput,
   ) =>
     request<HealthMetric>(`/persons/${personId}/metrics`, {
       method: "POST",
@@ -515,17 +538,18 @@ export const api = {
     request<SymptomLog[]>(`/persons/${personId}/symptoms`),
   symptomLog: (personId: string, symptomId: string) =>
     request<SymptomLog>(`/persons/${personId}/symptoms/${symptomId}`),
+  updateSymptomLog: (
+    personId: string,
+    symptomId: string,
+    payload: SymptomLogInput,
+  ) =>
+    request<SymptomLog>(`/persons/${personId}/symptoms/${symptomId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   createSymptomLog: (
     personId: string,
-    payload: {
-      symptom: string;
-      occurred_at: string;
-      severity: number;
-      duration_minutes: number | null;
-      estimated_start_date: string | null;
-      estimated_duration_days: number | null;
-      note: string | null;
-    },
+    payload: SymptomLogInput,
   ) =>
     request<SymptomLog>(`/persons/${personId}/symptoms`, {
       method: "POST",

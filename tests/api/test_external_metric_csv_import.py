@@ -74,6 +74,49 @@ def test_owned_person_can_import_valid_csv_and_view_in_history(client: TestClien
     assert len(metric_history) == 2
 
 
+def test_editing_imported_metric_preserves_provenance_and_csv_idempotency(
+    client: TestClient,
+) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+    csv_data = "recorded_at,blood_glucose_mg_dl,note\n2026-08-01T08:00:00Z,95.5,Imported\n"
+
+    imported = _import_csv(client, person_id, csv_data)
+    assert imported.status_code == 200
+    assert imported.json()["imported_count"] == 1
+    metric = client.get(f"/v1/persons/{person_id}/metrics").json()[0]
+    payload = {
+        "recorded_at": metric["recorded_at"],
+        "systolic_bp_mm_hg": metric["systolic_bp_mm_hg"],
+        "diastolic_bp_mm_hg": metric["diastolic_bp_mm_hg"],
+        "heart_rate_bpm": metric["heart_rate_bpm"],
+        "steps": metric["steps"],
+        "weight_kg": metric["weight_kg"],
+        "blood_glucose_mg_dl": 96.25,
+        "sleep_hours": metric["sleep_hours"],
+        "note": "Corrected imported reading",
+    }
+    edited = client.put(
+        f"/v1/persons/{person_id}/metrics/{metric['id']}",
+        headers=csrf_headers(client),
+        json=payload,
+    )
+    assert edited.status_code == 200
+    assert edited.json()["source_type"] == "external_csv"
+    assert edited.json()["blood_glucose_mg_dl"] == 96.25
+    assert edited.json()["note"] == "Corrected imported reading"
+
+    replay = _import_csv(client, person_id, csv_data)
+    assert replay.status_code == 200
+    assert replay.json() == {
+        "source_type": "external_csv",
+        "total_rows": 1,
+        "imported_count": 0,
+        "duplicate_count": 1,
+    }
+    assert len(client.get(f"/v1/persons/{person_id}/metrics").json()) == 1
+
+
 def test_two_decimal_glucose_accepts_exact_precision_and_max_boundary(
     client: TestClient,
 ) -> None:

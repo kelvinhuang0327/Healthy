@@ -212,6 +212,40 @@ class HealthMetricRepository:
         return database_session.scalar(statement)
 
     @staticmethod
+    def update_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        metric_id: uuid.UUID,
+        *,
+        recorded_at: datetime,
+        systolic_bp_mm_hg: int | None,
+        diastolic_bp_mm_hg: int | None,
+        heart_rate_bpm: int | None,
+        steps: int | None,
+        weight_kg: Decimal | None,
+        blood_glucose_mg_dl: Decimal | None,
+        sleep_hours: Decimal | None,
+        note: str | None,
+    ) -> HealthMetric | None:
+        metric = HealthMetricRepository.get_for_person(
+            database_session,
+            person_id,
+            metric_id,
+        )
+        if metric is None:
+            return None
+        metric.recorded_at = recorded_at
+        metric.systolic_bp_mm_hg = systolic_bp_mm_hg
+        metric.diastolic_bp_mm_hg = diastolic_bp_mm_hg
+        metric.heart_rate_bpm = heart_rate_bpm
+        metric.steps = steps
+        metric.weight_kg = weight_kg
+        metric.blood_glucose_mg_dl = blood_glucose_mg_dl
+        metric.sleep_hours = sleep_hours
+        metric.note = note
+        return metric
+
+    @staticmethod
     def get_latest_for_person(
         database_session: Session,
         person_id: uuid.UUID,
@@ -289,6 +323,36 @@ class SymptomLogRepository:
             SymptomLog.person_id == person_id,
         )
         return database_session.scalar(statement)
+
+    @staticmethod
+    def update_for_person(
+        database_session: Session,
+        person_id: uuid.UUID,
+        symptom_id: uuid.UUID,
+        *,
+        symptom: str,
+        occurred_at: datetime,
+        severity: int,
+        duration_minutes: int | None,
+        estimated_start_date: date | None,
+        estimated_duration_days: int | None,
+        note: str | None,
+    ) -> SymptomLog | None:
+        symptom_log = SymptomLogRepository.get_for_person(
+            database_session,
+            person_id,
+            symptom_id,
+        )
+        if symptom_log is None:
+            return None
+        symptom_log.symptom = symptom
+        symptom_log.occurred_at = occurred_at
+        symptom_log.severity = severity
+        symptom_log.duration_minutes = duration_minutes
+        symptom_log.estimated_start_date = estimated_start_date
+        symptom_log.estimated_duration_days = estimated_duration_days
+        symptom_log.note = note
+        return symptom_log
 
     @staticmethod
     def list_since_for_person(

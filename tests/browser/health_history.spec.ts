@@ -198,3 +198,94 @@ test("empty Health History shows an explicit empty state", async ({ page }) => {
   await expect(page.getByTestId("history-empty")).toBeVisible();
   await expect(page.getByTestId("history-empty")).toContainText("No health history yet");
 });
+
+test("editing measurements and symptoms keeps Today, History, and People in sync", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const marker = Date.now();
+  await register(page, `edit-owner-${marker}@example.com`, "Edit Owner");
+  await page.getByTestId("person-card").first().click();
+
+  const occurredAt = await localDateTimeForUtc(page, new Date(Date.now() - 30 * 60_000));
+  const symptomForm = page.getByTestId("symptom-form");
+  await symptomForm.getByLabel("Symptom").fill("Headache");
+  await symptomForm.locator('input[name="occurred_at"]').fill(occurredAt);
+  await symptomForm.getByLabel("Severity (1-5)").fill("2");
+  await symptomForm.getByLabel("Note").fill("Initial note");
+  await symptomForm.getByRole("button", { name: "Save symptom" }).click();
+  const symptomCard = page.getByTestId("symptom-list").getByTestId("symptom-card");
+  await expect(symptomCard).toHaveCount(1);
+
+  const metricForm = page.getByTestId("metric-form");
+  await metricForm.locator('input[name="heart_rate_bpm"]').fill("72");
+  await metricForm.getByRole("button", { name: "Save metric" }).click();
+  const metricCard = page.getByTestId("metric-list").getByTestId("metric-card");
+  await expect(metricCard).toHaveCount(1);
+  const metricId = await metricCard.getAttribute("data-metric-id");
+  const symptomId = await symptomCard.getAttribute("data-symptom-id");
+
+  await symptomCard.getByTestId("edit-symptom-button").click();
+  const symptomEdit = page.getByTestId("symptom-edit-form");
+  await symptomEdit.getByLabel("Symptom").fill("Migraine");
+  await symptomEdit.getByLabel("Severity (1-5)").fill("4");
+  await symptomEdit.getByLabel("Duration (minutes, optional)").fill("45");
+  await symptomEdit.getByLabel("Note").fill("Corrected after review");
+  await symptomEdit.getByRole("button", { name: "Save changes" }).click();
+  await expect(symptomCard).toHaveCount(1);
+  await expect(symptomCard.first()).toContainText("Migraine");
+  await expect(symptomCard.first()).toContainText("Severity 4/5");
+  await expect(symptomCard.first()).toContainText("45 minutes");
+
+  await metricCard.getByTestId("edit-metric-button").click();
+  const metricEdit = page.getByTestId("metric-edit-form");
+  await metricEdit.locator('input[name="heart_rate_bpm"]').fill("75");
+  await metricEdit.locator('input[name="blood_glucose_mg_dl"]').fill("95.55");
+  await metricEdit.locator('input[name="note"]').fill("Corrected measurement");
+  await metricEdit.getByRole("button", { name: "Save changes" }).click();
+  await expect(metricCard).toHaveCount(1);
+  await expect(metricCard.first()).toContainText("75 bpm");
+  await expect(metricCard.first()).toContainText("95.55 mg/dL");
+  await expect(metricCard.first()).toContainText("Corrected measurement");
+  await expect(page.getByTestId("today-latest-metric")).toContainText("75 bpm");
+  await expect(page.getByTestId("today-symptom-card")).toContainText("Migraine");
+
+  await page.getByTestId("person-form").getByLabel("Display name").fill("Other Person");
+  await page.getByRole("button", { name: "Create Person" }).click();
+  await expect(page.getByTestId("person-card")).toHaveCount(2);
+  await page.getByTestId("person-card").filter({ hasText: "Other Person" }).click();
+  await expect(page.getByTestId("metric-list").getByTestId("metric-empty-state")).toBeVisible();
+  await expect(page.getByTestId("symptom-list").getByTestId("symptom-empty-state")).toBeVisible();
+  const ownerPerson = page.getByTestId("person-card").filter({ hasText: "Edit Owner" });
+  await ownerPerson.focus();
+  await ownerPerson.press("Space");
+  await expect(page.getByTestId("metric-card")).toHaveCount(1);
+  await expect(page.getByTestId("metric-card")).toContainText("75 bpm");
+  await expect(page.getByTestId("symptom-card")).toHaveCount(1);
+  await expect(page.getByTestId("symptom-card")).toContainText("Migraine");
+
+  await page.getByTestId("history-link").click();
+  const historyItems = page.getByTestId("history-item");
+  await expect(historyItems).toHaveCount(2);
+  await expect(historyItems.filter({ hasText: "Corrected measurement" })).toHaveCount(1);
+  await expect(historyItems.filter({ hasText: "Migraine" })).toHaveCount(1);
+  await expect(
+    page.locator(`[data-testid="history-item"][data-source-id="${metricId}"]`),
+  ).toHaveCount(1);
+  await expect(
+    page.locator(`[data-testid="history-item"][data-source-id="${symptomId}"]`),
+  ).toHaveCount(1);
+
+  const viewportWidths = await page.evaluate(() => ({
+    viewport: window.innerWidth,
+    content: document.documentElement.scrollWidth,
+  }));
+  expect(viewportWidths.content).toBeLessThanOrEqual(viewportWidths.viewport);
+
+  await page.goto("/");
+  await expect(page.getByTestId("session-email")).toContainText(`edit-owner-${marker}`);
+  await expect(page.getByTestId("metric-card")).toHaveCount(1);
+  await expect(page.getByTestId("metric-card")).toContainText("75 bpm");
+  await expect(page.getByTestId("symptom-card")).toHaveCount(1);
+  await expect(page.getByTestId("symptom-card")).toContainText("Migraine");
+});

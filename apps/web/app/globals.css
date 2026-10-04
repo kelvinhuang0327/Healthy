@@ -17,7 +17,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -129,6 +130,17 @@ button.secondary {
   border: 1px solid #d7e5df;
   border-radius: 12px;
   padding: 13px 15px;
+  cursor: pointer;
+}
+
+.person:focus-visible,
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #31866b;
+  outline-offset: 2px;
 }
 
 .pill {
@@ -312,6 +324,16 @@ button.secondary {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+}
+
+.edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.edit-actions button {
+  flex: 1 1 140px;
 }
 
 .source-badge {
@@ -538,6 +560,32 @@ button:disabled {
 }
 
 @media (max-width: 700px) {
+  main {
+    padding-top: 24px;
+  }
+
+  .card {
+    padding: 18px;
+  }
+
+  .session {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .person {
+    flex-wrap: wrap;
+  }
+
+  .edit-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .edit-actions button {
+    width: 100%;
+  }
+
   .report-review-meta {
     grid-template-columns: 1fr;
   }

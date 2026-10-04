@@ -23,6 +23,8 @@ test-results/
 *.db
 *.db-shm
 *.db-wal
+*.healthy.lock
+.healthy-backups/
 .env
 .env.*
 !.env.example

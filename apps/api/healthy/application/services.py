@@ -360,6 +360,45 @@ def create_health_metric(
     return metric
 
 
+def update_health_metric(
+    database_session: Session,
+    *,
+    person_id: uuid.UUID,
+    metric_id: uuid.UUID,
+    recorded_at: datetime,
+    systolic_bp_mm_hg: int | None,
+    diastolic_bp_mm_hg: int | None,
+    heart_rate_bpm: int | None,
+    steps: int | None,
+    weight_kg: Decimal | None,
+    blood_glucose_mg_dl: Decimal | None,
+    sleep_hours: Decimal | None,
+    note: str | None,
+) -> HealthMetric | None:
+    metric = HealthMetricRepository.update_for_person(
+        database_session,
+        person_id,
+        metric_id,
+        recorded_at=recorded_at,
+        systolic_bp_mm_hg=systolic_bp_mm_hg,
+        diastolic_bp_mm_hg=diastolic_bp_mm_hg,
+        heart_rate_bpm=heart_rate_bpm,
+        steps=steps,
+        weight_kg=weight_kg,
+        blood_glucose_mg_dl=blood_glucose_mg_dl,
+        sleep_hours=sleep_hours,
+        note=note,
+    )
+    if metric is None:
+        return None
+    try:
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise HealthMetricIntegrityError from error
+    return metric
+
+
 def import_external_health_metrics_csv(
     database_session: Session,
     *,
@@ -497,6 +536,45 @@ def create_symptom_log(
         estimated_duration_days=estimated_duration_days,
         note=note,
     )
+    try:
+        database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise SymptomLogIntegrityError from error
+    return symptom_log
+
+
+def update_symptom_log(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    symptom_id: uuid.UUID,
+    symptom: str,
+    occurred_at: datetime,
+    severity: int,
+    duration_minutes: int | None,
+    note: str | None,
+    estimated_start_date: date | None = None,
+    estimated_duration_days: int | None = None,
+) -> SymptomLog | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    symptom_log = SymptomLogRepository.update_for_person(
+        database_session,
+        person.id,
+        symptom_id,
+        symptom=symptom,
+        occurred_at=occurred_at,
+        severity=severity,
+        duration_minutes=duration_minutes,
+        estimated_start_date=estimated_start_date,
+        estimated_duration_days=estimated_duration_days,
+        note=note,
+    )
+    if symptom_log is None:
+        return None
     try:
         database_session.commit()
     except IntegrityError as error:

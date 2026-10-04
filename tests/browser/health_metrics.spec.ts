@@ -139,6 +139,16 @@ test("selected Person can import health metrics from CSV, see provenance badges 
   const badges = metricList.getByTestId("metric-source-badge");
   await expect(badges.first()).toHaveText("Imported CSV");
 
+  // Editing an imported row keeps its provenance and original import fingerprint.
+  const importedCard = metricList.getByTestId("metric-card").first();
+  await importedCard.getByTestId("edit-metric-button").click();
+  const importedEditForm = importedCard.getByTestId("metric-edit-form");
+  await importedEditForm.locator('input[name="note"]').fill("Corrected imported note");
+  await importedEditForm.getByRole("button", { name: "Save changes" }).click();
+  await expect(importedCard.getByTestId("metric-source-badge")).toHaveText("Imported CSV");
+  await expect(importedCard).toContainText("Corrected imported note");
+  await expect(metricList.getByTestId("metric-card")).toHaveCount(2);
+
   // 4. Log manual metric
   const manualForm = page.getByTestId("metric-form");
   await manualForm.locator('input[name="heart_rate_bpm"]').fill("68");
@@ -146,7 +156,7 @@ test("selected Person can import health metrics from CSV, see provenance badges 
   await expect(metricList.getByTestId("metric-card")).toHaveCount(3);
   await expect(metricList.getByTestId("metric-source-badge").first()).toHaveText("Manual");
 
-  // 5. Re-import same CSV -> 0 imported, 2 duplicate
+  // 5. Re-import same CSV -> 0 imported, 2 duplicate, despite the edited display fields.
   await page.getByTestId("metric-csv-text-input").fill(csvData);
   await page.getByTestId("metric-csv-submit-button").click();
   await expect(summary).toContainText("0 imported");

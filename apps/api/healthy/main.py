@@ -1,20 +1,34 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from healthy.infrastructure.config import Settings
 from healthy.infrastructure.database import Database
+from healthy.local_data import database_operation_lock
 from healthy.presentation.api import router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or Settings.from_env()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        if resolved_settings.environment == "test":
+            yield
+            return
+        with database_operation_lock(resolved_settings.database_url):
+            yield
+
     app = FastAPI(
         title="Healthy API",
         version="1.0.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
     app.state.settings = resolved_settings
     app.state.database = Database(resolved_settings.database_url)

@@ -34,6 +34,29 @@ def _create_symptom(client: TestClient, person_id: str, **overrides: object):
     )
 
 
+def _replace_symptom(
+    client: TestClient,
+    person_id: str,
+    symptom_id: str,
+    **overrides: object,
+):
+    payload = {
+        "symptom": "Headache",
+        "occurred_at": datetime.now(UTC).isoformat(),
+        "severity": 3,
+        "duration_minutes": None,
+        "estimated_start_date": None,
+        "estimated_duration_days": None,
+        "note": None,
+    }
+    payload.update(overrides)
+    return client.put(
+        f"/v1/persons/{person_id}/symptoms/{symptom_id}",
+        headers=csrf_headers(client),
+        json=payload,
+    )
+
+
 def test_create_historical_list_and_single_fetch_newest_first(client: TestClient) -> None:
     assert register(client).status_code == 201
     person_id = _person_id(client)
@@ -76,6 +99,114 @@ def test_create_historical_list_and_single_fetch_newest_first(client: TestClient
     single = client.get(f"/v1/persons/{person_id}/symptoms/{newer.json()['id']}")
     assert single.status_code == 200
     assert single.json() == newer.json()
+
+
+def test_symptom_update_preserves_identity_and_syncs_today_and_history(
+    client: TestClient,
+) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+    created = _create_symptom(
+        client,
+        person_id,
+        symptom="Headache",
+        severity=2,
+        duration_minutes=20,
+        note="Initial note",
+    )
+    assert created.status_code == 201
+    original = created.json()
+
+    updated = _replace_symptom(
+        client,
+        person_id,
+        original["id"],
+        symptom="Migraine",
+        occurred_at=original["occurred_at"],
+        severity=4,
+        duration_minutes=45,
+        estimated_start_date="2026-01-03",
+        estimated_duration_days=7,
+        note="Corrected note",
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["id"] == original["id"]
+    assert updated.json()["person_id"] == person_id
+    assert updated.json()["symptom"] == "Migraine"
+    assert updated.json()["severity"] == 4
+    assert updated.json()["duration_minutes"] == 45
+    assert updated.json()["note"] == "Corrected note"
+    assert len(client.get(f"/v1/persons/{person_id}/symptoms").json()) == 1
+
+    today = client.get(f"/v1/persons/{person_id}/assistant/today").json()
+    assert today["recent_symptoms"][0]["id"] == original["id"]
+    assert today["recent_symptoms"][0]["symptom"] == "Migraine"
+    history = client.get(f"/v1/persons/{person_id}/history").json()
+    history_item = next(item for item in history if item["source"]["id"] == original["id"])
+    assert history_item["primary_value"] == "Migraine"
+    assert "Severity 4/5" in history_item["detail"]
+    assert "Corrected note" in history_item["detail"]
+
+    invalid = _replace_symptom(client, person_id, original["id"], symptom=" ")
+    assert invalid.status_code == 422
+    unchanged = client.get(f"/v1/persons/{person_id}/symptoms/{original['id']}").json()
+    assert unchanged["symptom"] == "Migraine"
+    assert unchanged["severity"] == 4
+
+
+def test_symptom_update_is_scoped_to_the_owned_person_and_account(
+    client: TestClient,
+) -> None:
+    assert register(client, email="symptom-owner-a@example.com").status_code == 201
+    person_a = _person_id(client)
+    created = _create_symptom(client, person_a, symptom="Fatigue")
+    symptom_id = created.json()["id"]
+    person_b = client.post(
+        "/v1/persons",
+        headers=csrf_headers(client),
+        json={"display_name": "Synthetic second person", "relationship": "family"},
+    ).json()["id"]
+
+    wrong_person = _replace_symptom(client, person_b, symptom_id, symptom="Nausea")
+    assert wrong_person.status_code == 404
+    still_owned = client.get(f"/v1/persons/{person_a}/symptoms/{symptom_id}").json()
+    assert still_owned["symptom"] == "Fatigue"
+
+    other = TestClient(client.app, base_url=ORIGIN)
+    assert register(other, email="symptom-owner-b@example.com").status_code == 201
+    foreign = _replace_symptom(other, person_a, symptom_id, symptom="Nausea")
+    assert foreign.status_code == 404
+
+
+def test_symptom_update_requires_valid_origin_and_csrf(client: TestClient) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+    symptom_log = _create_symptom(client, person_id).json()
+    url = f"/v1/persons/{person_id}/symptoms/{symptom_log['id']}"
+    payload = {
+        "symptom": "Headache",
+        "occurred_at": symptom_log["occurred_at"],
+        "severity": 4,
+        "duration_minutes": None,
+        "estimated_start_date": None,
+        "estimated_duration_days": None,
+        "note": None,
+    }
+
+    missing_csrf = client.put(url, headers={"Origin": ORIGIN}, json=payload)
+    invalid_csrf = client.put(
+        url,
+        headers={"Origin": ORIGIN, "X-CSRF-Token": "invalid"},
+        json=payload,
+    )
+    invalid_origin = client.put(
+        url,
+        headers=csrf_headers(client, origin="https://attacker.example"),
+        json=payload,
+    )
+    assert missing_csrf.status_code == invalid_csrf.status_code == 403
+    assert invalid_origin.status_code == 403
+    assert client.get(url).json()["severity"] == 3
 
 
 def test_create_rejects_future_and_timezone_naive_occurred_at(client: TestClient) -> None:

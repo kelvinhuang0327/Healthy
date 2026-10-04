@@ -7,8 +7,16 @@ SQLITE_TEST_DATABASE_URL := sqlite+pysqlite:///$(SQLITE_DATABASE_PATH)
 LEGACY_POSTGRES_TEST_ENV := TZ=UTC HEALTHY_ENV=test HEALTHY_DATABASE_URL=$(SQLITE_TEST_DATABASE_URL) HEALTHY_COOKIE_SECURE=false HEALTHY_ALLOWED_ORIGINS=http://127.0.0.1:3000
 NPM_ENV := npm_config_cache=$(CURDIR)/.npm-cache
 NODE_VERSION := 24.18.0
+LOCAL_DATA_DIR ?= $(HOME)/.healthy
+LOCAL_DATABASE_PATH ?= $(LOCAL_DATA_DIR)/healthy.db
+LOCAL_DATABASE_URL ?= sqlite+pysqlite:///$(LOCAL_DATABASE_PATH)
+LOCAL_ENV := HEALTHY_ENV=development HEALTHY_DATABASE_URL=$(LOCAL_DATABASE_URL) HEALTHY_COOKIE_SECURE=false HEALTHY_ALLOWED_ORIGINS=http://127.0.0.1:3000
+LOCAL_BACKUP_DIR ?= $(LOCAL_DATA_DIR)/backups
 
-.PHONY: node-check install db-up db-down db-reset migrate migration-cycle openapi-check api-test api-lint api-typecheck web-typecheck web-lint web-build browser-test legacy-postgres-test focused test
+.PHONY: help node-check install local local-db-up backup restore db-up db-down db-reset migrate migration-cycle openapi-check api-test api-lint api-typecheck web-typecheck web-lint web-build browser-test legacy-postgres-test focused test
+
+help:
+	@printf '%s\n' 'make local                         Start Healthy on this machine only.' 'make backup                        Save a private SQLite backup (stop Healthy first).' 'make restore BACKUP=/path/file    Validate and confirm a local restore (stop Healthy first).'
 
 node-check:
 	@node -e 'if (process.versions.node !== "$(NODE_VERSION)") { console.error("Expected Node $(NODE_VERSION), received " + process.versions.node); process.exit(1) }'
@@ -17,6 +25,20 @@ install: node-check
 	uv sync --all-groups --frozen
 	$(NPM_ENV) npm ci
 	PLAYWRIGHT_BROWSERS_PATH=.playwright npx playwright install chromium
+
+local: node-check local-db-up
+	$(LOCAL_ENV) HEALTHY_API_ORIGIN=http://127.0.0.1:8000 uv run python scripts/run_local.py
+
+local-db-up:
+	$(LOCAL_ENV) uv run --directory apps/api python -m healthy.local_data prepare --directory "$(LOCAL_DATA_DIR)"
+	$(LOCAL_ENV) uv run alembic -c migrations/alembic.ini upgrade head
+
+backup:
+	$(LOCAL_ENV) HEALTHY_BACKUP_DIR="$(LOCAL_BACKUP_DIR)" uv run --directory apps/api python -m healthy.local_data backup
+
+restore:
+	@test -n "$(BACKUP)" || { echo 'Set BACKUP=/path/to/healthy-backup.sqlite3'; exit 2; }
+	$(LOCAL_ENV) HEALTHY_BACKUP_DIR="$(LOCAL_BACKUP_DIR)" uv run --directory apps/api python -m healthy.local_data restore --file "$(BACKUP)"
 
 db-up:
 	$(MAKE) migrate

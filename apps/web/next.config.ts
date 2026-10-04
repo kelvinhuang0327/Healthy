@@ -10,6 +10,7 @@ const repositoryRoot = path.resolve(
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  agentRules: false,
   turbopack: {
     root: repositoryRoot,
   },

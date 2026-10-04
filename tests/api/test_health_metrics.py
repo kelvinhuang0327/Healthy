@@ -37,6 +37,31 @@ def _create_metric(client: TestClient, person_id: str, **overrides: object):
     )
 
 
+def _replace_metric(
+    client: TestClient,
+    person_id: str,
+    metric_id: str,
+    **overrides: object,
+):
+    payload = {
+        "recorded_at": datetime.now(UTC).isoformat(),
+        "systolic_bp_mm_hg": None,
+        "diastolic_bp_mm_hg": None,
+        "heart_rate_bpm": None,
+        "steps": None,
+        "weight_kg": None,
+        "blood_glucose_mg_dl": None,
+        "sleep_hours": None,
+        "note": None,
+    }
+    payload.update(overrides)
+    return client.put(
+        f"/v1/persons/{person_id}/metrics/{metric_id}",
+        headers=csrf_headers(client),
+        json=payload,
+    )
+
+
 def test_metric_lifecycle_create_list_get_with_ordering_and_decimal_json_numbers(
     client: TestClient,
 ) -> None:
@@ -81,6 +106,104 @@ def test_metric_lifecycle_create_list_get_with_ordering_and_decimal_json_numbers
     single = client.get(f"/v1/persons/{person_id}/metrics/{newer_body['id']}")
     assert single.status_code == 200
     assert single.json() == newer_body
+
+
+def test_metric_update_preserves_identity_and_syncs_today_and_history(
+    client: TestClient,
+) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+    created = _create_metric(client, person_id, heart_rate_bpm=70, note="Initial value")
+    assert created.status_code == 201
+    original = created.json()
+
+    updated = _replace_metric(
+        client,
+        person_id,
+        original["id"],
+        recorded_at=original["recorded_at"],
+        heart_rate_bpm=76,
+        blood_glucose_mg_dl=95.55,
+        note="Corrected value",
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["id"] == original["id"]
+    assert updated.json()["person_id"] == person_id
+    assert updated.json()["heart_rate_bpm"] == 76
+    assert updated.json()["blood_glucose_mg_dl"] == 95.55
+    assert updated.json()["note"] == "Corrected value"
+    assert len(client.get(f"/v1/persons/{person_id}/metrics").json()) == 1
+
+    today = client.get(f"/v1/persons/{person_id}/assistant/today").json()
+    assert today["latest_metric"]["id"] == original["id"]
+    assert today["latest_metric"]["heart_rate_bpm"] == 76
+    history = client.get(f"/v1/persons/{person_id}/history").json()
+    history_item = next(item for item in history if item["source"]["id"] == original["id"])
+    assert history_item["primary_value"] == "76 bpm · 95.55 mg/dL"
+    assert history_item["detail"] == "Corrected value"
+
+    invalid = _replace_metric(client, person_id, original["id"])
+    assert invalid.status_code == 422
+    unchanged = client.get(f"/v1/persons/{person_id}/metrics/{original['id']}").json()
+    assert unchanged["heart_rate_bpm"] == 76
+    assert unchanged["blood_glucose_mg_dl"] == 95.55
+
+
+def test_metric_update_cannot_move_a_record_between_persons_or_accounts(
+    client: TestClient,
+) -> None:
+    assert register(client, email="metric-owner-a@example.com").status_code == 201
+    person_a = _person_id(client)
+    created = _create_metric(client, person_a, heart_rate_bpm=70)
+    metric_id = created.json()["id"]
+    person_b = client.post(
+        "/v1/persons",
+        headers=csrf_headers(client),
+        json={"display_name": "Synthetic second person", "relationship": "family"},
+    ).json()["id"]
+
+    wrong_person = _replace_metric(client, person_b, metric_id, heart_rate_bpm=99)
+    assert wrong_person.status_code == 404
+    still_owned = client.get(f"/v1/persons/{person_a}/metrics/{metric_id}").json()
+    assert still_owned["heart_rate_bpm"] == 70
+
+    other = TestClient(client.app, base_url=ORIGIN)
+    assert register(other, email="metric-owner-b@example.com").status_code == 201
+    foreign = _replace_metric(other, person_a, metric_id, heart_rate_bpm=99)
+    assert foreign.status_code == 404
+
+
+def test_metric_update_requires_valid_origin_and_csrf(client: TestClient) -> None:
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+    metric = _create_metric(client, person_id, heart_rate_bpm=70).json()
+    url = f"/v1/persons/{person_id}/metrics/{metric['id']}"
+    payload = {
+        "recorded_at": metric["recorded_at"],
+        "systolic_bp_mm_hg": None,
+        "diastolic_bp_mm_hg": None,
+        "heart_rate_bpm": 76,
+        "steps": None,
+        "weight_kg": None,
+        "blood_glucose_mg_dl": None,
+        "sleep_hours": None,
+        "note": None,
+    }
+
+    missing_csrf = client.put(url, headers={"Origin": ORIGIN}, json=payload)
+    invalid_csrf = client.put(
+        url,
+        headers={"Origin": ORIGIN, "X-CSRF-Token": "invalid"},
+        json=payload,
+    )
+    invalid_origin = client.put(
+        url,
+        headers=csrf_headers(client, origin="https://attacker.example"),
+        json=payload,
+    )
+    assert missing_csrf.status_code == invalid_csrf.status_code == 403
+    assert invalid_origin.status_code == 403
+    assert client.get(url).json()["heart_rate_bpm"] == 70
 
 
 def test_create_requires_at_least_one_metric_value(client: TestClient) -> None:

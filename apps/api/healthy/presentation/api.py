@@ -99,23 +99,10 @@ def _session_summary(issued: services.IssuedSession) -> SessionSummary:
     )
 
 
-def _set_authentication_cookies(
-    response: Response,
-    issued: services.IssuedSession,
-    settings: Settings,
-) -> None:
+def _set_csrf_cookie(response: Response, session_id: uuid.UUID, settings: Settings) -> None:
     from healthy.infrastructure.security import create_csrf_token
 
-    csrf_token = create_csrf_token(issued.session.id, settings.csrf_secret)
-    response.set_cookie(
-        key=SESSION_COOKIE,
-        value=issued.raw_token,
-        max_age=settings.session_max_age_seconds,
-        path="/",
-        secure=settings.cookie_secure,
-        httponly=True,
-        samesite="lax",
-    )
+    csrf_token = create_csrf_token(session_id, settings.csrf_secret)
     response.set_cookie(
         key=CSRF_COOKIE,
         value=csrf_token,
@@ -125,6 +112,23 @@ def _set_authentication_cookies(
         httponly=False,
         samesite="lax",
     )
+
+
+def _set_authentication_cookies(
+    response: Response,
+    issued: services.IssuedSession,
+    settings: Settings,
+) -> None:
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=issued.raw_token,
+        max_age=settings.session_max_age_seconds,
+        path="/",
+        secure=settings.cookie_secure,
+        httponly=True,
+        samesite="lax",
+    )
+    _set_csrf_cookie(response, issued.session.id, settings)
 
 
 @router.post(
@@ -219,8 +223,11 @@ def delete_current_session(
 
 @router.get("/session", response_model=SessionSummary)
 def get_current_session(
+    response: Response,
     authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> SessionSummary:
+    _set_csrf_cookie(response, authenticated.session.id, settings)
     return SessionSummary(
         id=authenticated.session.id,
         account=AccountSummary.model_validate(authenticated.account),
@@ -377,6 +384,46 @@ def get_health_metric(
 ) -> HealthMetricSummary:
     _get_owned_person(person_id, authenticated, database_session)
     metric = services.get_health_metric(database_session, person_id, metric_id)
+    if metric is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Metric not found",
+        )
+    return HealthMetricSummary.model_validate(metric)
+
+
+@router.put(
+    "/persons/{person_id}/metrics/{metric_id}",
+    response_model=HealthMetricSummary,
+)
+def put_health_metric(
+    person_id: uuid.UUID,
+    metric_id: uuid.UUID,
+    payload: HealthMetricCreate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> HealthMetricSummary:
+    _get_owned_person(person_id, authenticated, database_session)
+    try:
+        metric = services.update_health_metric(
+            database_session,
+            person_id=person_id,
+            metric_id=metric_id,
+            recorded_at=payload.recorded_at,
+            systolic_bp_mm_hg=payload.systolic_bp_mm_hg,
+            diastolic_bp_mm_hg=payload.diastolic_bp_mm_hg,
+            heart_rate_bpm=payload.heart_rate_bpm,
+            steps=payload.steps,
+            weight_kg=payload.weight_kg,
+            blood_glucose_mg_dl=payload.blood_glucose_mg_dl,
+            sleep_hours=payload.sleep_hours,
+            note=payload.note,
+        )
+    except services.HealthMetricIntegrityError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid request",
+        ) from error
     if metric is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -687,6 +734,38 @@ def get_symptom_log(
         owner_account_id=authenticated.account.id,
         person_id=person_id,
         symptom_id=symptom_id,
+    )
+    if symptom_log is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Symptom record not found",
+        )
+    return SymptomLogSummary.model_validate(symptom_log)
+
+
+@router.put(
+    "/persons/{person_id}/symptoms/{symptom_id}",
+    response_model=SymptomLogSummary,
+)
+def put_symptom_log(
+    person_id: uuid.UUID,
+    symptom_id: uuid.UUID,
+    payload: SymptomLogCreate,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> SymptomLogSummary:
+    symptom_log = services.update_symptom_log(
+        database_session,
+        owner_account_id=authenticated.account.id,
+        person_id=person_id,
+        symptom_id=symptom_id,
+        symptom=payload.symptom,
+        occurred_at=payload.occurred_at,
+        severity=payload.severity,
+        duration_minutes=payload.duration_minutes,
+        estimated_start_date=payload.estimated_start_date,
+        estimated_duration_days=payload.estimated_duration_days,
+        note=payload.note,
     )
     if symptom_log is None:
         raise HTTPException(

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   api,
@@ -12,14 +12,41 @@ import {
   type HealthAction,
   type HealthActionReminder,
   type HealthMetric,
+  type HealthMetricInput,
   type HealthScore,
   type Person,
   type RiskAlert,
   type RiskAlerts,
   type SessionSummary,
   type SymptomLog,
+  type SymptomLogInput,
   type NotificationCapabilities,
 } from "../lib/api";
+
+function localDateTimeInputValue(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
+function sortMetrics(rows: HealthMetric[]): HealthMetric[] {
+  return [...rows].sort(
+    (left, right) =>
+      new Date(right.recorded_at).getTime() - new Date(left.recorded_at).getTime() ||
+      new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+  );
+}
+
+function sortSymptoms(rows: SymptomLog[]): SymptomLog[] {
+  return [...rows].sort(
+    (left, right) =>
+      new Date(right.occurred_at).getTime() - new Date(left.occurred_at).getTime() ||
+      new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+  );
+}
 
 function compareRiskAlerts(left: RiskAlert, right: RiskAlert): number {
   const severityRank = { high: 0, medium: 1 } as const;
@@ -80,11 +107,21 @@ function acceptedActionIdentityKey(action: HealthAction): string | null {
 
 export default function Home() {
   const [session, setSession] = useState<SessionSummary | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [persons, setPersons] = useState<Person[]>([]);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(
     null,
   );
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
+  const [personLoadAttempt, setPersonLoadAttempt] = useState(0);
+  const [completedPersonLoad, setCompletedPersonLoad] = useState<{
+    personId: string;
+    attempt: number;
+  } | null>(null);
+  const [failedPersonLoad, setFailedPersonLoad] = useState<{
+    personId: string;
+    attempt: number;
+  } | null>(null);
   const [healthScore, setHealthScore] = useState<HealthScore | null>(null);
   const [symptomLogs, setSymptomLogs] = useState<SymptomLog[]>([]);
   const [healthActions, setHealthActions] = useState<HealthAction[]>([]);
@@ -106,10 +143,15 @@ export default function Home() {
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   );
   const [heightSaving, setHeightSaving] = useState(false);
+  const [metricSaving, setMetricSaving] = useState(false);
+  const [symptomSaving, setSymptomSaving] = useState(false);
+  const [editingMetricId, setEditingMetricId] = useState<string | null>(null);
+  const [editingSymptomId, setEditingSymptomId] = useState<string | null>(null);
   const [csvImportSummary, setCsvImportSummary] =
     useState<ExternalMetricCsvImportSummary | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
   const [error, setError] = useState("");
+  const selectedPersonIdRef = useRef<string | null>(null);
   const latestMetric = assistantToday?.latest_metric ?? null;
 
   async function loadActionReminders(
@@ -133,45 +175,68 @@ export default function Home() {
 
   async function refresh() {
     try {
-      const [current, rows] = await Promise.all([
-        api.session(),
-        api.persons(),
-      ]);
-      const capabilities = await api.notificationCapabilities();
+      const current = await api.session();
       setSession(current);
+      const rows = await api.persons();
       setPersons(rows);
-      setNotificationCapabilities(capabilities);
+      try {
+        setNotificationCapabilities(await api.notificationCapabilities());
+      } catch {
+        setNotificationCapabilities(null);
+      }
       setError("");
-    } catch {
-      setSession(null);
-      setPersons([]);
-      setSelectedPersonId(null);
-      setMetrics([]);
-      setHealthScore(null);
-      setSymptomLogs([]);
-      setHealthActions([]);
-      setActionReminders({});
-      setDueReminders([]);
-      setNotificationCapabilities(null);
-      setRiskAlerts(null);
-      setActionRecommendations(null);
-      setAssistantToday(null);
-      setAcceptingRecommendationKeys([]);
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.status === 401) {
+        setSession(null);
+        setPersons([]);
+        setSelectedPersonId(null);
+        setMetrics([]);
+        setHealthScore(null);
+        setSymptomLogs([]);
+        setHealthActions([]);
+        setActionReminders({});
+        setDueReminders([]);
+        setNotificationCapabilities(null);
+        setRiskAlerts(null);
+        setActionRecommendations(null);
+        setAssistantToday(null);
+        setAcceptingRecommendationKeys([]);
+        setError("");
+      } else {
+        setError("Could not refresh Healthy. Your saved records have not been changed.");
+      }
+    } finally {
+      setAuthLoading(false);
     }
   }
 
   useEffect(() => {
-    Promise.all([api.session(), api.persons(), api.notificationCapabilities()])
-      .then(([current, rows, capabilities]) => {
+    async function loadSession() {
+      try {
+        const current = await api.session();
         setSession(current);
+        const rows = await api.persons();
         setPersons(rows);
-        setNotificationCapabilities(capabilities);
-      })
-      .catch(() => {
-        setSession(null);
-        setPersons([]);
-        setNotificationCapabilities(null);
-      });
+        try {
+          setNotificationCapabilities(await api.notificationCapabilities());
+        } catch {
+          setNotificationCapabilities(null);
+        }
+      } catch (reason: unknown) {
+        if (reason instanceof ApiError && reason.status === 401) {
+          setSession(null);
+          setPersons([]);
+          setNotificationCapabilities(null);
+          setError("");
+        } else {
+          setError("Could not connect to Healthy. Check the server and try again.");
+        }
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+
+    void loadSession();
   }, []);
 
   const selectedPerson =
@@ -179,6 +244,20 @@ export default function Home() {
     persons.find((person) => person.is_default) ??
     persons[0];
   const effectiveSelectedPersonId = selectedPerson?.id;
+  const currentLoadMatches = (load: typeof completedPersonLoad) =>
+    load !== null &&
+    load.personId === effectiveSelectedPersonId &&
+    load.attempt === personLoadAttempt;
+  const personRecordsError = currentLoadMatches(failedPersonLoad);
+  const personRecordsLoading = Boolean(
+    effectiveSelectedPersonId &&
+      !currentLoadMatches(completedPersonLoad) &&
+      !personRecordsError,
+  );
+
+  useEffect(() => {
+    selectedPersonIdRef.current = effectiveSelectedPersonId ?? null;
+  }, [effectiveSelectedPersonId]);
 
   useEffect(() => {
     if (!effectiveSelectedPersonId) {
@@ -220,27 +299,49 @@ export default function Home() {
             setActionReminders(reminderEntries);
             setDueReminders(due);
             setAcceptingRecommendationKeys([]);
+            setCompletedPersonLoad({
+              personId: effectiveSelectedPersonId,
+              attempt: personLoadAttempt,
+            });
+            setFailedPersonLoad(null);
+            setError("");
           }
         })
-      .catch(() => {
+      .catch((reason: unknown) => {
         if (!cancelled) {
-          setMetrics([]);
-          setHealthScore(null);
-          setSymptomLogs([]);
-          setHealthActions([]);
-          setActionReminders({});
-          setDueReminders([]);
-          setNotificationCapabilities(null);
-          setAssistantToday(null);
-          setRiskAlerts(null);
-          setActionRecommendations(null);
-          setAcceptingRecommendationKeys([]);
+          setFailedPersonLoad({
+            personId: effectiveSelectedPersonId,
+            attempt: personLoadAttempt,
+          });
+          if (reason instanceof ApiError && reason.status === 401) {
+            selectedPersonIdRef.current = null;
+            setSession(null);
+            setPersons([]);
+            setSelectedPersonId(null);
+            setMetrics([]);
+            setHealthScore(null);
+            setSymptomLogs([]);
+            setHealthActions([]);
+            setActionReminders({});
+            setDueReminders([]);
+            setAssistantToday(null);
+            setRiskAlerts(null);
+            setActionRecommendations(null);
+            setAcceptingRecommendationKeys([]);
+            setCompletedPersonLoad(null);
+            setFailedPersonLoad(null);
+            setError("Your session has expired. Sign in again to view saved records.");
+          } else {
+            setError(
+              "Could not load this person’s records. Your saved data is unchanged; retry when the server is available.",
+            );
+          }
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [effectiveSelectedPersonId]);
+  }, [effectiveSelectedPersonId, personLoadAttempt]);
 
   async function saveHeight(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -274,36 +375,43 @@ export default function Home() {
   }
 
 
-  async function refreshAssistantToday() {
-    const personId = selectedPerson?.id;
+  async function refreshAssistantToday(personId = selectedPerson?.id) {
     if (!personId) {
       return;
     }
     try {
-      setAssistantToday(await api.assistantToday(personId));
+      const today = await api.assistantToday(personId);
+      if (selectedPersonIdRef.current === personId) {
+        setAssistantToday(today);
+      }
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Could not refresh Today",
-      );
+      if (selectedPersonIdRef.current === personId) {
+        setError(
+          reason instanceof Error ? reason.message : "Could not refresh Today",
+        );
+      }
     }
   }
 
-  async function refreshDueReminders() {
-    const personId = selectedPerson?.id;
+  async function refreshDueReminders(personId = selectedPerson?.id) {
     if (!personId) {
       return;
     }
     try {
-      setDueReminders(await api.dueHealthActionReminders(personId));
+      const reminders = await api.dueHealthActionReminders(personId);
+      if (selectedPersonIdRef.current === personId) {
+        setDueReminders(reminders);
+      }
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Could not refresh reminders",
-      );
+      if (selectedPersonIdRef.current === personId) {
+        setError(
+          reason instanceof Error ? reason.message : "Could not refresh reminders",
+        );
+      }
     }
   }
 
-  async function refreshRiskSignals() {
-    const personId = selectedPerson?.id;
+  async function refreshRiskSignals(personId = selectedPerson?.id) {
     if (!personId) {
       return;
     }
@@ -312,36 +420,47 @@ export default function Home() {
         api.riskAlerts(personId),
         api.actionRecommendations(personId),
       ]);
-      setRiskAlerts(alerts);
-      setActionRecommendations(recommendations);
+      if (selectedPersonIdRef.current === personId) {
+        setRiskAlerts(alerts);
+        setActionRecommendations(recommendations);
+      }
     } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "Could not refresh Risk Alerts",
-      );
+      if (selectedPersonIdRef.current === personId) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Could not refresh Risk Alerts",
+        );
+      }
     }
   }
 
-  async function refreshToday() {
+  async function refreshToday(personId = selectedPerson?.id) {
+    if (!personId) {
+      return;
+    }
     await Promise.all([
-      refreshAssistantToday(),
-      refreshRiskSignals(),
-      refreshDueReminders(),
+      refreshAssistantToday(personId),
+      refreshRiskSignals(personId),
+      refreshDueReminders(personId),
     ]);
   }
 
-  async function refreshHealthScore() {
-    const personId = selectedPerson?.id;
+  async function refreshHealthScore(personId = selectedPerson?.id) {
     if (!personId) {
       return;
     }
     try {
-      setHealthScore(await api.healthScore(personId));
+      const score = await api.healthScore(personId);
+      if (selectedPersonIdRef.current === personId) {
+        setHealthScore(score);
+      }
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Could not refresh health score",
-      );
+      if (selectedPersonIdRef.current === personId) {
+        setError(
+          reason instanceof Error ? reason.message : "Could not refresh health score",
+        );
+      }
     }
   }
 
@@ -401,9 +520,12 @@ export default function Home() {
   async function logout() {
     try {
       await api.logout();
+      selectedPersonIdRef.current = null;
       setSession(null);
       setPersons([]);
       setSelectedPersonId(null);
+      setCompletedPersonLoad(null);
+      setFailedPersonLoad(null);
       setMetrics([]);
       setHealthScore(null);
       setSymptomLogs([]);
@@ -415,6 +537,8 @@ export default function Home() {
       setActionRecommendations(null);
       setAssistantToday(null);
       setAcceptingRecommendationKeys([]);
+      setEditingMetricId(null);
+      setEditingSymptomId(null);
       setError("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Logout failed");
@@ -429,42 +553,116 @@ export default function Home() {
     return Number(raw);
   }
 
+  function healthMetricInputFromForm(form: FormData): HealthMetricInput {
+    const recordedAtLocal = String(form.get("recorded_at") ?? "");
+    const recordedAt = recordedAtLocal ? new Date(recordedAtLocal) : new Date();
+    if (Number.isNaN(recordedAt.getTime())) {
+      throw new Error("Enter a valid date and time for this measurement.");
+    }
+    const note = String(form.get("note") ?? "").trim();
+    return {
+      recorded_at: recordedAt.toISOString(),
+      systolic_bp_mm_hg: numberFieldOrNull(form, "systolic_bp_mm_hg"),
+      diastolic_bp_mm_hg: numberFieldOrNull(form, "diastolic_bp_mm_hg"),
+      heart_rate_bpm: numberFieldOrNull(form, "heart_rate_bpm"),
+      steps: numberFieldOrNull(form, "steps"),
+      weight_kg: numberFieldOrNull(form, "weight_kg"),
+      blood_glucose_mg_dl: numberFieldOrNull(form, "blood_glucose_mg_dl"),
+      sleep_hours: numberFieldOrNull(form, "sleep_hours"),
+      note: note || null,
+    };
+  }
+
+  function symptomLogInputFromForm(form: FormData): SymptomLogInput {
+    const occurredAtLocal = String(form.get("occurred_at") ?? "");
+    const occurredAt = new Date(occurredAtLocal);
+    if (Number.isNaN(occurredAt.getTime())) {
+      throw new Error("Enter a valid date and time for this symptom.");
+    }
+    const estimatedStartDate = String(form.get("estimated_start_date") ?? "").trim();
+    const note = String(form.get("note") ?? "").trim();
+    return {
+      symptom: String(form.get("symptom") ?? "").trim(),
+      occurred_at: occurredAt.toISOString(),
+      severity: Number(form.get("severity")),
+      duration_minutes: numberFieldOrNull(form, "duration_minutes"),
+      estimated_start_date: estimatedStartDate || null,
+      estimated_duration_days: numberFieldOrNull(form, "estimated_duration_days"),
+      note: note || null,
+    };
+  }
+
+  async function refreshRecordSummaries(personId: string) {
+    await Promise.all([
+      refreshHealthScore(personId),
+      refreshAssistantToday(personId),
+      refreshRiskSignals(personId),
+    ]);
+  }
+
   async function createHealthMetric(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     const personId = selectedPerson?.id;
-    if (!personId) {
+    if (!personId || metricSaving) {
       return;
     }
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    const recordedAtLocal = String(form.get("recorded_at") ?? "");
-    const recordedAt = recordedAtLocal
-      ? new Date(recordedAtLocal).toISOString()
-      : new Date().toISOString();
-    const note = String(form.get("note") ?? "").trim();
+    setMetricSaving(true);
     try {
-      await api.createHealthMetric(personId, {
-        recorded_at: recordedAt,
-        systolic_bp_mm_hg: numberFieldOrNull(form, "systolic_bp_mm_hg"),
-        diastolic_bp_mm_hg: numberFieldOrNull(form, "diastolic_bp_mm_hg"),
-        heart_rate_bpm: numberFieldOrNull(form, "heart_rate_bpm"),
-        steps: numberFieldOrNull(form, "steps"),
-        weight_kg: numberFieldOrNull(form, "weight_kg"),
-        blood_glucose_mg_dl: numberFieldOrNull(form, "blood_glucose_mg_dl"),
-        sleep_hours: numberFieldOrNull(form, "sleep_hours"),
-        note: note || null,
-      });
-      formElement.reset();
-      const rows = await api.healthMetrics(personId);
-      setMetrics(rows);
-      await refreshHealthScore();
-      await refreshAssistantToday();
-      await refreshRiskSignals();
+      const created = await api.createHealthMetric(
+        personId,
+        healthMetricInputFromForm(form),
+      );
+      if (selectedPersonIdRef.current === personId) {
+        setMetrics((current) =>
+          sortMetrics([created, ...current.filter((row) => row.id !== created.id)]),
+        );
+        formElement.reset();
+        await refreshRecordSummaries(personId);
+      }
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Metric entry failed",
       );
+    } finally {
+      setMetricSaving(false);
+    }
+  }
+
+  async function updateHealthMetric(
+    event: FormEvent<HTMLFormElement>,
+    metricId: string,
+  ) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId || metricSaving) {
+      return;
+    }
+    setMetricSaving(true);
+    try {
+      const updated = await api.updateHealthMetric(
+        personId,
+        metricId,
+        healthMetricInputFromForm(new FormData(event.currentTarget)),
+      );
+      if (selectedPersonIdRef.current === personId) {
+        setMetrics((current) =>
+          sortMetrics([updated, ...current.filter((row) => row.id !== updated.id)]),
+        );
+        setEditingMetricId(null);
+        await refreshRecordSummaries(personId);
+      }
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not update this measurement. The saved value is unchanged.",
+      );
+    } finally {
+      setMetricSaving(false);
     }
   }
 
@@ -473,34 +671,41 @@ export default function Home() {
     setError("");
     setCsvImportSummary(null);
     const personId = selectedPerson?.id;
-    if (!personId) {
+    if (!personId || csvImporting) {
       return;
     }
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    const file = form.get("csv_file") as File | null;
-    const rawText = String(form.get("csv_text") ?? "").trim();
-    let payload = "";
-
-    if (file && file.size > 0) {
-      payload = await file.text();
-    } else if (rawText) {
-      payload = rawText;
-    } else {
-      setError("Please select a CSV file or paste CSV content");
-      return;
-    }
-
     setCsvImporting(true);
     try {
+      const file = form.get("csv_file") as File | null;
+      const rawText = String(form.get("csv_text") ?? "").trim();
+      let payload = "";
+      if (file && file.size > 0) {
+        payload = await file.text();
+      } else if (rawText) {
+        payload = rawText;
+      } else {
+        setError("Choose a CSV file or paste CSV content before importing.");
+        return;
+      }
+
       const summary = await api.importMetricCsv(personId, payload);
-      setCsvImportSummary(summary);
-      formElement.reset();
-      const rows = await api.healthMetrics(personId);
-      setMetrics(rows);
-      await refreshHealthScore();
-      await refreshAssistantToday();
-      await refreshRiskSignals();
+      if (selectedPersonIdRef.current === personId) {
+        setCsvImportSummary(summary);
+        formElement.reset();
+        try {
+          const rows = await api.healthMetrics(personId);
+          if (selectedPersonIdRef.current === personId) {
+            setMetrics(rows);
+          }
+        } catch {
+          setError(
+            "CSV import completed, but the list could not refresh. Retry loading records; importing the same file again is safe.",
+          );
+        }
+        await refreshRecordSummaries(personId);
+      }
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "CSV import failed",
@@ -514,32 +719,70 @@ export default function Home() {
     event.preventDefault();
     setError("");
     const personId = selectedPerson?.id;
-    if (!personId) {
+    if (!personId || symptomSaving) {
       return;
     }
     const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const occurredAtLocal = String(form.get("occurred_at") ?? "");
-    const estimatedStartDate = String(form.get("estimated_start_date") ?? "").trim();
-    const note = String(form.get("note") ?? "").trim();
+    setSymptomSaving(true);
     try {
-      await api.createSymptomLog(personId, {
-        symptom: String(form.get("symptom") ?? "").trim(),
-        occurred_at: new Date(occurredAtLocal).toISOString(),
-        severity: Number(form.get("severity")),
-        duration_minutes: numberFieldOrNull(form, "duration_minutes"),
-        estimated_start_date: estimatedStartDate || null,
-        estimated_duration_days: numberFieldOrNull(form, "estimated_duration_days"),
-        note: note || null,
-      });
-      formElement.reset();
-      setSymptomLogs(await api.symptomLogs(personId));
-      await refreshHealthScore();
-      await refreshAssistantToday();
+      const created = await api.createSymptomLog(
+        personId,
+        symptomLogInputFromForm(new FormData(formElement)),
+      );
+      if (selectedPersonIdRef.current === personId) {
+        setSymptomLogs((current) =>
+          sortSymptoms([created, ...current.filter((row) => row.id !== created.id)]),
+        );
+        formElement.reset();
+        await Promise.all([
+          refreshHealthScore(personId),
+          refreshAssistantToday(personId),
+        ]);
+      }
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Symptom entry failed",
       );
+    } finally {
+      setSymptomSaving(false);
+    }
+  }
+
+  async function updateSymptomLog(
+    event: FormEvent<HTMLFormElement>,
+    symptomId: string,
+  ) {
+    event.preventDefault();
+    setError("");
+    const personId = selectedPerson?.id;
+    if (!personId || symptomSaving) {
+      return;
+    }
+    setSymptomSaving(true);
+    try {
+      const updated = await api.updateSymptomLog(
+        personId,
+        symptomId,
+        symptomLogInputFromForm(new FormData(event.currentTarget)),
+      );
+      if (selectedPersonIdRef.current === personId) {
+        setSymptomLogs((current) =>
+          sortSymptoms([updated, ...current.filter((row) => row.id !== updated.id)]),
+        );
+        setEditingSymptomId(null);
+        await Promise.all([
+          refreshHealthScore(personId),
+          refreshAssistantToday(personId),
+        ]);
+      }
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not update this symptom. The saved value is unchanged.",
+      );
+    } finally {
+      setSymptomSaving(false);
     }
   }
 
@@ -781,14 +1024,34 @@ export default function Home() {
       .filter((key): key is string => key !== null),
   );
 
+  function selectPerson(personId: string) {
+    const changed = selectedPersonIdRef.current !== personId;
+    selectedPersonIdRef.current = personId;
+    setSelectedPersonId(personId);
+    setEditingMetricId(null);
+    setEditingSymptomId(null);
+    if (changed) {
+      setMetrics([]);
+      setHealthScore(null);
+      setSymptomLogs([]);
+      setHealthActions([]);
+      setAssistantToday(null);
+      setCsvImportSummary(null);
+      setError("");
+      setRiskAlerts(null);
+      setActionRecommendations(null);
+      setActionReminders({});
+      setDueReminders([]);
+    }
+  }
+
   return (
 
     <main>
       <header>
         <h1>Healthy</h1>
         <p className="lede">
-          A secure foundation where accounts authenticate and every health
-          context belongs to an explicitly owned Person.
+          Keep a private record of health measurements, symptoms, daily actions, and reminders.
         </p>
       </header>
 
@@ -796,7 +1059,25 @@ export default function Home() {
         {error}
       </p>
 
-      {!session ? (
+      {session && personRecordsLoading ? (
+        <p role="status" data-testid="person-data-loading">
+          Loading records for {selectedPerson?.display_name}…
+        </p>
+      ) : null}
+      {session && personRecordsError ? (
+        <button
+          className="secondary"
+          type="button"
+          data-testid="retry-person-data-button"
+          onClick={() => setPersonLoadAttempt((current) => current + 1)}
+        >
+          Retry loading records
+        </button>
+      ) : null}
+
+      {authLoading ? (
+        <p data-testid="auth-loading">Checking your saved session…</p>
+      ) : !session ? (
         <section className="grid" aria-label="Authentication">
           <article className="card">
             <h2>Create account</h2>
@@ -864,13 +1145,12 @@ export default function Home() {
                   key={person.id}
                   data-testid="person-card"
                   data-person-id={person.id}
-                  onClick={() => {
-                    setSelectedPersonId(person.id);
-                    if (person.id !== effectiveSelectedPersonId) {
-                      setRiskAlerts(null);
-                      setActionRecommendations(null);
-                      setActionReminders({});
-                      setDueReminders([]);
+                  aria-pressed={person.id === effectiveSelectedPersonId}
+                  onClick={() => selectPerson(person.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      selectPerson(person.id);
                     }
                   }}
                   role="button"
@@ -930,7 +1210,7 @@ export default function Home() {
                   className="secondary"
                   type="button"
                   data-testid="health-score-refresh-button"
-                  onClick={refreshHealthScore}
+                  onClick={() => void refreshHealthScore()}
                 >
                   Refresh
                 </button>
@@ -977,6 +1257,10 @@ export default function Home() {
                     </p>
                   </div>
                   <p className="muted">{healthScore.limitations}</p>
+                  <p className="muted" data-testid="health-score-disclaimer">
+                    This score is a limited rules-based summary, not a medical diagnosis or a
+                    substitute for advice from a qualified clinician.
+                  </p>
                 </>
               ) : (
                 <p>Health signal unavailable.</p>
@@ -1197,7 +1481,11 @@ export default function Home() {
           {selectedPerson ? (
             <article className="card">
               <h2>Log a symptom for {selectedPerson.display_name}</h2>
-              <form onSubmit={createSymptomLog} data-testid="symptom-form">
+              <form
+                key={selectedPerson.id}
+                onSubmit={createSymptomLog}
+                data-testid="symptom-form"
+              >
                 <label>
                   Symptom
                   <input name="symptom" maxLength={120} required />
@@ -1241,7 +1529,16 @@ export default function Home() {
                   Note
                   <input name="note" maxLength={2000} />
                 </label>
-                <button type="submit">Save symptom</button>
+                <button
+                  type="submit"
+                  disabled={symptomSaving || personRecordsLoading}
+                >
+                  {symptomSaving
+                    ? "Saving symptom…"
+                    : personRecordsLoading
+                      ? "Loading records…"
+                      : "Save symptom"}
+                </button>
               </form>
             </article>
           ) : null}
@@ -1250,7 +1547,11 @@ export default function Home() {
             <article className="card">
               <h2>Symptom timeline for {selectedPerson.display_name}</h2>
               <ul className="metrics" data-testid="symptom-list">
-                {symptomLogs.length === 0 ? (
+                {personRecordsLoading ? (
+                  <li data-testid="symptom-loading">Loading symptoms…</li>
+                ) : personRecordsError ? (
+                  <li data-testid="symptom-load-error">Symptoms could not be loaded.</li>
+                ) : symptomLogs.length === 0 ? (
                   <li className="metric" data-testid="symptom-empty-state">
                     No symptoms recorded yet.
                   </li>
@@ -1276,6 +1577,100 @@ export default function Home() {
                       ) : null}
                     </ul>
                     {symptomLog.note ? <p>{symptomLog.note}</p> : null}
+                    {editingSymptomId === symptomLog.id ? (
+                      <form
+                        onSubmit={(event) => updateSymptomLog(event, symptomLog.id)}
+                        data-testid="symptom-edit-form"
+                      >
+                        <label>
+                          Symptom
+                          <input
+                            name="symptom"
+                            maxLength={120}
+                            defaultValue={symptomLog.symptom}
+                            required
+                          />
+                        </label>
+                        <label>
+                          Occurred at
+                          <input
+                            name="occurred_at"
+                            type="datetime-local"
+                            defaultValue={localDateTimeInputValue(symptomLog.occurred_at)}
+                            required
+                          />
+                        </label>
+                        <label>
+                          Severity (1-5)
+                          <input
+                            name="severity"
+                            type="number"
+                            min={1}
+                            max={5}
+                            defaultValue={symptomLog.severity}
+                            required
+                          />
+                        </label>
+                        <label>
+                          Duration (minutes, optional)
+                          <input
+                            name="duration_minutes"
+                            type="number"
+                            min={1}
+                            defaultValue={symptomLog.duration_minutes ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Estimated start date (optional)
+                          <input
+                            name="estimated_start_date"
+                            type="date"
+                            defaultValue={symptomLog.estimated_start_date ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Estimated duration (days, optional)
+                          <input
+                            name="estimated_duration_days"
+                            type="number"
+                            min={1}
+                            max={36500}
+                            defaultValue={symptomLog.estimated_duration_days ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Note
+                          <input
+                            name="note"
+                            maxLength={2000}
+                            defaultValue={symptomLog.note ?? ""}
+                          />
+                        </label>
+                        <div className="edit-actions">
+                          <button type="submit" disabled={symptomSaving}>
+                            {symptomSaving ? "Saving…" : "Save changes"}
+                          </button>
+                          <button
+                            className="secondary"
+                            type="button"
+                            disabled={symptomSaving}
+                            onClick={() => setEditingSymptomId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button
+                        className="secondary"
+                        type="button"
+                        data-testid="edit-symptom-button"
+                        disabled={symptomSaving}
+                        onClick={() => setEditingSymptomId(symptomLog.id)}
+                      >
+                        Edit symptom
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -1285,7 +1680,11 @@ export default function Home() {
           {selectedPerson ? (
             <article className="card">
               <h2>Log a health metric for {selectedPerson.display_name}</h2>
-              <form onSubmit={createHealthMetric} data-testid="metric-form">
+              <form
+                key={selectedPerson.id}
+                onSubmit={createHealthMetric}
+                data-testid="metric-form"
+              >
                 <label>
                   Recorded at
                   <input name="recorded_at" type="datetime-local" />
@@ -1331,7 +1730,7 @@ export default function Home() {
                   <input
                     name="blood_glucose_mg_dl"
                     type="number"
-                    step="0.1"
+                    step="0.01"
                     min={10}
                     max={1000}
                   />
@@ -1348,7 +1747,16 @@ export default function Home() {
                   Note
                   <input name="note" maxLength={2000} />
                 </label>
-                <button type="submit">Save metric</button>
+                <button
+                  type="submit"
+                  disabled={metricSaving || personRecordsLoading}
+                >
+                  {metricSaving
+                    ? "Saving metric…"
+                    : personRecordsLoading
+                      ? "Loading records…"
+                      : "Save metric"}
+                </button>
               </form>
             </article>
           ) : null}
@@ -1361,7 +1769,11 @@ export default function Home() {
                 <code>systolic_bp_mm_hg</code>, <code>diastolic_bp_mm_hg</code>, <code>heart_rate_bpm</code>,{" "}
                 <code>steps</code>, <code>weight_kg</code>, <code>blood_glucose_mg_dl</code>, <code>sleep_hours</code>, <code>note</code>.
               </p>
-              <form onSubmit={importMetricCsv} data-testid="metric-csv-import-form">
+              <form
+                key={selectedPerson.id}
+                onSubmit={importMetricCsv}
+                data-testid="metric-csv-import-form"
+              >
                 <label>
                   CSV file
                   <input
@@ -1403,7 +1815,13 @@ export default function Home() {
             <article className="card">
               <h2>Health metric history for {selectedPerson.display_name}</h2>
               <ul className="metrics" data-testid="metric-list">
-                {metrics.length === 0 ? (
+                {personRecordsLoading ? (
+                  <li data-testid="metric-loading">Loading measurements…</li>
+                ) : personRecordsError ? (
+                  <li data-testid="metric-load-error">
+                    Measurements could not be loaded.
+                  </li>
+                ) : metrics.length === 0 ? (
                   <li className="metric" data-testid="metric-empty-state">
                     No health metrics recorded yet.
                   </li>
@@ -1451,6 +1869,125 @@ export default function Home() {
                       ) : null}
                     </ul>
                     {metric.note ? <p>{metric.note}</p> : null}
+                    {editingMetricId === metric.id ? (
+                      <form
+                        onSubmit={(event) => updateHealthMetric(event, metric.id)}
+                        data-testid="metric-edit-form"
+                      >
+                        <label>
+                          Recorded at
+                          <input
+                            name="recorded_at"
+                            type="datetime-local"
+                            defaultValue={localDateTimeInputValue(metric.recorded_at)}
+                            required
+                          />
+                        </label>
+                        <label>
+                          Systolic blood pressure (mmHg)
+                          <input
+                            name="systolic_bp_mm_hg"
+                            type="number"
+                            min={30}
+                            max={300}
+                            defaultValue={metric.systolic_bp_mm_hg ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Diastolic blood pressure (mmHg)
+                          <input
+                            name="diastolic_bp_mm_hg"
+                            type="number"
+                            min={20}
+                            max={200}
+                            defaultValue={metric.diastolic_bp_mm_hg ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Heart rate (bpm)
+                          <input
+                            name="heart_rate_bpm"
+                            type="number"
+                            min={20}
+                            max={300}
+                            defaultValue={metric.heart_rate_bpm ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Steps (count)
+                          <input
+                            name="steps"
+                            type="number"
+                            min={0}
+                            max={200000}
+                            step={1}
+                            defaultValue={metric.steps ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Weight (kg)
+                          <input
+                            name="weight_kg"
+                            type="number"
+                            step="0.01"
+                            min={1}
+                            max={500}
+                            defaultValue={metric.weight_kg ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Blood glucose (mg/dL)
+                          <input
+                            name="blood_glucose_mg_dl"
+                            type="number"
+                            step="0.01"
+                            min={10}
+                            max={1000}
+                            defaultValue={metric.blood_glucose_mg_dl ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Sleep duration (hours)
+                          <input
+                            name="sleep_hours"
+                            type="number"
+                            step="0.01"
+                            defaultValue={metric.sleep_hours ?? ""}
+                          />
+                        </label>
+                        <label>
+                          Note
+                          <input
+                            name="note"
+                            maxLength={2000}
+                            defaultValue={metric.note ?? ""}
+                          />
+                        </label>
+                        <div className="edit-actions">
+                          <button type="submit" disabled={metricSaving}>
+                            {metricSaving ? "Saving…" : "Save changes"}
+                          </button>
+                          <button
+                            className="secondary"
+                            type="button"
+                            disabled={metricSaving}
+                            onClick={() => setEditingMetricId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button
+                        className="secondary"
+                        type="button"
+                        data-testid="edit-metric-button"
+                        disabled={metricSaving}
+                        onClick={() => setEditingMetricId(metric.id)}
+                      >
+                        Edit measurement
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -1465,7 +2002,7 @@ export default function Home() {
                   className="secondary"
                   type="button"
                   data-testid="today-refresh-button"
-                  onClick={refreshToday}
+                  onClick={() => void refreshToday()}
                 >
                   Refresh
                 </button>

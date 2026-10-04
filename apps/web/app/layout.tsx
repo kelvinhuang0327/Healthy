@@ -3,7 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Healthy",
-  description: "Secure identity and person ownership foundation",
+  description:
+    "Private health tracking for measurements, symptoms, habits, and reminders. Health summaries are informational, not diagnoses.",
 };
 
 export default function RootLayout({

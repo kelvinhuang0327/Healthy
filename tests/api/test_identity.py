@@ -7,9 +7,11 @@ import pytest
 from conftest import DATABASE_URL, ORIGIN, csrf_headers, register
 from fastapi.testclient import TestClient
 from healthy.application import services
+from healthy.infrastructure.config import Settings
 from healthy.infrastructure.database import Database
 from healthy.infrastructure.models import Account, Person, SessionRecord
 from healthy.infrastructure.security import verify_password
+from healthy.main import create_app
 from sqlalchemy import func, select
 
 
@@ -227,3 +229,32 @@ def test_create_person_requires_valid_csrf(client: TestClient) -> None:
     assert missing.status_code == invalid.status_code == 403
     assert allowed.status_code == 201
     assert allowed.json()["is_default"] is False
+
+
+def test_session_refreshes_csrf_cookie_after_local_restart(client: TestClient) -> None:
+    assert register(client).status_code == 201
+    previous_csrf = client.cookies.get("healthy_csrf")
+    settings = Settings(
+        environment="test",
+        database_url=DATABASE_URL,
+        cookie_secure=False,
+        allowed_origins=frozenset({ORIGIN}),
+        csrf_secret=b"a-new-synthetic-csrf-key-for-restart-test",
+    )
+    restarted_client = TestClient(
+        create_app(settings),
+        base_url=ORIGIN,
+        cookies=client.cookies,
+    )
+
+    with restarted_client:
+        session = restarted_client.get("/v1/session")
+        refreshed_csrf = restarted_client.cookies.get("healthy_csrf")
+        assert session.status_code == 200
+        assert refreshed_csrf and refreshed_csrf != previous_csrf
+        logout = restarted_client.delete(
+            "/v1/sessions/current",
+            headers=csrf_headers(restarted_client),
+        )
+
+    assert logout.status_code == 204

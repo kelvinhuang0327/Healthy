@@ -92,7 +92,6 @@ def _create_outcome(
     )
 
 
-
 def _record_action_outcome(
     client: TestClient,
     person_id: str,
@@ -101,9 +100,7 @@ def _record_action_outcome(
     observed_at: str,
 ) -> dict[str, object]:
     action_id = _create_done_action(client, person_id)
-    response = _create_outcome(
-        client, person_id, action_id, note=note, observed_at=observed_at
-    )
+    response = _create_outcome(client, person_id, action_id, note=note, observed_at=observed_at)
     assert response.status_code == 201
     return response.json()
 
@@ -209,7 +206,7 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         person_id,
         action_id,
         note="After the walk I felt more rested.",
-        observed_at="2026-08-04T08:00:00Z",
+        observed_at=outcome_at,
     )
     pending = client.post(
         f"/v1/persons/{person_id}/reports",
@@ -261,7 +258,7 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
         "report_source_name": "Confirmed Lab",
     }
     assert outcome_item["id"] == outcome.json()["id"]
-    assert outcome_item["occurred_at"] == "2026-08-04T08:00:00Z"
+    assert outcome_item["occurred_at"] == outcome_at.replace("+00:00", "Z")
     assert outcome_item["title"] == "Action outcome"
     assert outcome_item["primary_value"] == "After the walk I felt more rested."
     assert outcome_item["unit"] is None
@@ -287,7 +284,7 @@ def test_history_mixes_sources_newest_first_and_excludes_pending_reports(
     assert confirmed["id"] == confirmed_detail["id"] == report_item["source"]["report_id"]
     today = client.get(f"/v1/persons/{person_id}/assistant/today")
     assert today.status_code == 200
-    assert outcome_note not in [item["note"] for item in today.json()["recent_outcomes"]]
+    assert outcome.json()["note"] not in [item["note"] for item in today.json()["recent_outcomes"]]
 
 
 def test_history_tied_timestamps_are_deterministic_across_reads(client: TestClient) -> None:

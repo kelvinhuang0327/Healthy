@@ -246,7 +246,7 @@ def _execute_target(
         raise LegacyMetricMigrationError("TARGET_DATABASE_DIALECT_UNSUPPORTED") from None
 
     try:
-        if target_engine.dialect.name != "postgresql":
+        if target_engine.dialect.name != "sqlite":
             raise LegacyMetricMigrationError("TARGET_DATABASE_DIALECT_UNSUPPORTED")
 
         imported_count = 0

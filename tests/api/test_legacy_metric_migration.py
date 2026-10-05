@@ -15,7 +15,15 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from conftest import DATABASE_URL
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from conftest import (
+    DATABASE_URL,
+    LEGACY_POSTGRES_DATABASE_URL,
+    ROOT,
+    legacy_postgres_engine,
+    legacy_postgres_skip_reason,
+)
 from healthy.application import legacy_metric_migration as migration
 from healthy.application.legacy_metric_export import LegacyExportResult
 from healthy.application.legacy_metric_migration import (
@@ -26,10 +34,20 @@ from healthy.application.legacy_metric_migration import (
     serialize_migration_error,
     serialize_migration_summary,
 )
-from healthy.infrastructure.models import HealthMetric
+from healthy.infrastructure.models import Account, HealthMetric, Person
 from sqlalchemy import create_engine, select, text
+from sqlalchemy.orm import Session
 
-EXPECTED_TARGET_REVISION = "20260820_0015"
+
+def _target_revision() -> str:
+    config = Config(str(ROOT / "migrations" / "alembic.ini"))
+    config.set_main_option("script_location", str(ROOT / "migrations"))
+    revision = ScriptDirectory.from_config(config).get_current_head()
+    assert revision is not None
+    return revision
+
+
+EXPECTED_TARGET_REVISION = _target_revision()
 SYNTHETIC_CSV = (
     b"recorded_at,blood_glucose_mg_dl,note\n2026-01-02T03:04:05Z,123.45,synthetic validation note\n"
 )
@@ -48,13 +66,17 @@ class SyntheticTarget:
 
 
 def _legacy_database_url(schema_name: str) -> str:
-    separator = "&" if "?" in DATABASE_URL else "?"
-    return f"{DATABASE_URL}{separator}options=-csearch_path%3D{schema_name}"
+    assert LEGACY_POSTGRES_DATABASE_URL is not None
+    separator = "&" if "?" in LEGACY_POSTGRES_DATABASE_URL else "?"
+    return f"{LEGACY_POSTGRES_DATABASE_URL}{separator}options=-csearch_path%3D{schema_name}"
 
 
 @pytest.fixture
 def synthetic_legacy_source() -> Iterator[SyntheticLegacySource]:
-    engine = create_engine(DATABASE_URL)
+    reason = legacy_postgres_skip_reason()
+    if reason is not None:
+        pytest.skip(reason)
+    engine = legacy_postgres_engine()
     schema_name = f"synthetic_metric_migration_{uuid.uuid4().hex}"
     person_ids = (uuid.uuid4(), uuid.uuid4())
     owner_ids = (uuid.uuid4(), uuid.uuid4())
@@ -195,56 +217,47 @@ def synthetic_target() -> SyntheticTarget:
     account_id = uuid.uuid4()
     person_ids = (uuid.uuid4(), uuid.uuid4())
     manual_metric_id = uuid.uuid4()
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "INSERT INTO accounts "
-                "(id, normalized_email, password_hash, status) "
-                "VALUES (:id, :email, :password_hash, 'active')"
-            ),
-            {
-                "id": account_id,
-                "email": f"{account_id.hex}@synthetic.invalid",
-                "password_hash": "synthetic-password-hash",
-            },
-        )
-        connection.execute(
-            text(
-                "INSERT INTO persons "
-                "(id, owner_account_id, display_name, relationship, is_default) "
-                "VALUES (:id, :account_id, :display_name, :relationship, :is_default)"
-            ),
-            [
-                {
-                    "id": person_ids[0],
-                    "account_id": account_id,
-                    "display_name": "Synthetic Primary",
-                    "relationship": "self",
-                    "is_default": True,
-                },
-                {
-                    "id": person_ids[1],
-                    "account_id": account_id,
-                    "display_name": "Synthetic Secondary",
-                    "relationship": "family",
-                    "is_default": False,
-                },
-            ],
-        )
-        connection.execute(
-            text(
-                "INSERT INTO health_metrics "
-                "(id, person_id, recorded_at, heart_rate_bpm, source_type) "
-                "VALUES (:id, :person_id, :recorded_at, :heart_rate, 'manual')"
-            ),
-            {
-                "id": manual_metric_id,
-                "person_id": person_ids[0],
-                "recorded_at": datetime(2025, 12, 31, 23, 59, tzinfo=UTC),
-                "heart_rate": 59,
-            },
-        )
-    engine.dispose()
+    try:
+        with Session(engine) as database_session, database_session.begin():
+            database_session.add(
+                Account(
+                    id=account_id,
+                    normalized_email=f"{account_id.hex}@synthetic.invalid",
+                    password_hash="synthetic-password-hash",
+                    status="active",
+                )
+            )
+            database_session.flush()
+            database_session.add_all(
+                [
+                    Person(
+                        id=person_ids[0],
+                        owner_account_id=account_id,
+                        display_name="Synthetic Primary",
+                        relationship="self",
+                        is_default=True,
+                    ),
+                    Person(
+                        id=person_ids[1],
+                        owner_account_id=account_id,
+                        display_name="Synthetic Secondary",
+                        relationship="family",
+                        is_default=False,
+                    ),
+                ]
+            )
+            database_session.flush()
+            database_session.add(
+                HealthMetric(
+                    id=manual_metric_id,
+                    person_id=person_ids[0],
+                    recorded_at=datetime(2025, 12, 31, 23, 59, tzinfo=UTC),
+                    heart_rate_bpm=59,
+                    source_type="manual",
+                )
+            )
+    finally:
+        engine.dispose()
     return SyntheticTarget(person_ids=person_ids, manual_metric_id=manual_metric_id)
 
 
@@ -404,6 +417,7 @@ def test_validate_only_uses_canonical_export_and_parser_without_target_or_files(
     assert set(tmp_path.iterdir()) == before_files
 
 
+@pytest.mark.legacy_postgres
 def test_execute_is_atomic_preserves_precision_and_is_idempotent(
     monkeypatch: pytest.MonkeyPatch,
     synthetic_legacy_source: SyntheticLegacySource,
@@ -452,6 +466,7 @@ def test_execute_is_atomic_preserves_precision_and_is_idempotent(
     )
 
 
+@pytest.mark.legacy_postgres
 def test_confirmation_and_expected_count_gates_precede_target_connection(
     monkeypatch: pytest.MonkeyPatch,
     synthetic_legacy_source: SyntheticLegacySource,
@@ -500,6 +515,7 @@ def test_confirmation_and_expected_count_gates_precede_target_connection(
     assert len(_metric_snapshot()) == 1
 
 
+@pytest.mark.legacy_postgres
 def test_target_revision_and_person_preflight_leave_zero_new_rows(
     monkeypatch: pytest.MonkeyPatch,
     synthetic_legacy_source: SyntheticLegacySource,
@@ -532,6 +548,7 @@ def test_target_revision_and_person_preflight_leave_zero_new_rows(
     assert len(_metric_snapshot()) == 1
 
 
+@pytest.mark.legacy_postgres
 def test_later_mapping_failure_rolls_back_earlier_staged_inserts(
     monkeypatch: pytest.MonkeyPatch,
     synthetic_legacy_source: SyntheticLegacySource,
@@ -560,6 +577,7 @@ def test_later_mapping_failure_rolls_back_earlier_staged_inserts(
     assert len(_metric_snapshot()) == 1
 
 
+@pytest.mark.legacy_postgres
 def test_source_validation_failure_prevents_target_connection_and_writes(
     monkeypatch: pytest.MonkeyPatch,
     synthetic_legacy_source: SyntheticLegacySource,
@@ -636,3 +654,24 @@ def test_cli_failure_is_one_compact_privacy_safe_json_object(
     assert str(legacy_id) not in captured.err
     assert str(healthy_id) not in captured.err
     assert "synthetic_password" not in captured.err
+
+
+def test_private_target_rejects_postgres_without_opening_a_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class UnsupportedEngine:
+        class Dialect:
+            name = "postgresql"
+
+        dialect = Dialect()
+        disposed = False
+
+        def dispose(self) -> None:
+            self.disposed = True
+
+    engine = UnsupportedEngine()
+    monkeypatch.setattr(migration, "_create_target_engine", lambda _url: engine)
+    with pytest.raises(LegacyMetricMigrationError) as error_info:
+        migration._execute_target("synthetic-private-target", (), (), EXPECTED_TARGET_REVISION, 0)
+    assert error_info.value.code == "TARGET_DATABASE_DIALECT_UNSUPPORTED"
+    assert engine.disposed

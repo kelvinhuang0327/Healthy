@@ -119,6 +119,8 @@ export default function HealthHistoryPage() {
             <p>
               For <strong>{selectedPerson.display_name}</strong>
             </p>
+            <a className="history-link" href={api.summaryExportUrl(selectedPerson.id)}
+              data-testid="summary-export-link">Download health summary</a>
             <div className="history-filters" role="group" aria-label="History type filter">
               {(Object.keys(filterLabels) as HistoryFilter[]).map((option) => (
                 <button

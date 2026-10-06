@@ -37,7 +37,10 @@ async function proxy(request: NextRequest, context: RouteContext) {
     cache: "no-store",
   });
   const responseHeaders = new Headers();
-  for (const name of ["content-type", "vary"]) {
+  for (const name of [
+    "content-type", "vary", "content-disposition", "cache-control",
+    "content-security-policy", "x-content-type-options", "referrer-policy",
+  ]) {
     const value = upstream.headers.get(name);
     if (value) {
       responseHeaders.set(name, value);

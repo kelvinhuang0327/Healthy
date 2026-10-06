@@ -19,7 +19,7 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
-from healthy.application import services
+from healthy.application import services, summary_exports
 from healthy.application.services import AuthenticatedSession
 from healthy.domain import report_intakes as report_intakes_domain
 from healthy.domain import reports as reports_domain
@@ -68,6 +68,7 @@ from healthy.presentation.schemas import (
     InsightEvidenceSummary,
     InsightSummary,
     NotificationCapabilitiesSummary,
+    PasswordChange,
     PersonCreate,
     PersonHeightUpdate,
     PersonSummary,
@@ -129,6 +130,13 @@ def _set_authentication_cookies(
         samesite="lax",
     )
     _set_csrf_cookie(response, issued.session.id, settings)
+
+
+def _clear_authentication_cookies(response: Response, settings: Settings) -> None:
+    for name, http_only in ((SESSION_COOKIE, True), (CSRF_COOKIE, False)):
+        response.delete_cookie(
+            name, path="/", secure=settings.cookie_secure, httponly=http_only, samesite="lax"
+        )
 
 
 @router.post(
@@ -205,20 +213,34 @@ def delete_current_session(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> None:
     services.revoke_session(database_session, authenticated)
-    response.delete_cookie(
-        SESSION_COOKIE,
-        path="/",
-        secure=settings.cookie_secure,
-        httponly=True,
-        samesite="lax",
-    )
-    response.delete_cookie(
-        CSRF_COOKIE,
-        path="/",
-        secure=settings.cookie_secure,
-        httponly=False,
-        samesite="lax",
-    )
+    _clear_authentication_cookies(response, settings)
+
+
+@router.post("/accounts/current/password", status_code=status.HTTP_204_NO_CONTENT)
+def change_current_password(
+    payload: PasswordChange,
+    response: Response,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> None:
+    """Change the password and revoke all sessions, including the current session."""
+    try:
+        services.change_password(
+            database_session,
+            authenticated,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except services.InvalidCredentialsError as error:
+        raise HTTPException(
+            status_code=400, detail="Current password is incorrect or changed"
+        ) from error
+    except services.UnchangedPasswordError as error:
+        raise HTTPException(
+            status_code=422, detail="New password must differ from current password"
+        ) from error
+    _clear_authentication_cookies(response, settings)
 
 
 @router.get("/session", response_model=SessionSummary)
@@ -1331,6 +1353,40 @@ def get_health_history(
         )
         for item in history
     ]
+
+
+@router.get(
+    "/persons/{person_id}/summary-export",
+    response_class=Response,
+    responses={
+        200: {"content": {"text/html": {}}, "description": "UTF-8 local health summary attachment"}
+    },
+)
+def export_person_summary(
+    person_id: uuid.UUID,
+    authenticated: Annotated[AuthenticatedSession, Depends(get_authenticated_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> Response:
+    now = datetime.now(UTC)
+    # A read savepoint keeps all sections in the same SQLite snapshot.
+    with database_session.begin_nested():
+        person = _get_owned_person(person_id, authenticated, database_session)
+        content = summary_exports.render_person_summary(database_session, person, now)
+    return Response(
+        content,
+        media_type="text/html",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="healthy-summary-{person_id}-{now.date().isoformat()}.html"'
+            ),
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": (
+                "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+            ),
+            "Referrer-Policy": "no-referrer",
+        },
+    )
 
 
 @router.get(

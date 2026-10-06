@@ -465,6 +465,12 @@ export const api = {
       method: "DELETE",
     }),
   session: () => request<SessionSummary>("/session"),
+  changePassword: (payload: { current_password: string; new_password: string }) =>
+    request<void>("/accounts/current/password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  summaryExportUrl: (personId: string) => `/api/v1/persons/${encodeURIComponent(personId)}/summary-export`,
   persons: () => request<Person[]>("/persons"),
   notificationCapabilities: () =>
     request<NotificationCapabilities>("/notification-capabilities"),

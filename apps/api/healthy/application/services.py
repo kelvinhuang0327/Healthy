@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -62,6 +62,10 @@ class DuplicateEmailError(Exception):
 
 
 class InvalidCredentialsError(Exception):
+    pass
+
+
+class UnchangedPasswordError(Exception):
     pass
 
 
@@ -244,9 +248,28 @@ def login(
     valid_password = verify_password(password, account.password_hash if account else None)
     if account is None or not valid_password:
         raise InvalidCredentialsError
-    session_record, raw_token = _session_record(account.id, session_max_age_seconds)
-    database_session.add(session_record)
-    database_session.commit()
+    try:
+        # Serialize credential checking and session issuance with password changes.
+        # A login that verified an older hash must not issue a surviving session.
+        matched = database_session.scalar(
+            update(Account)
+            .where(
+                Account.id == account.id,
+                Account.status == AccountStatus.ACTIVE,
+                Account.password_hash == account.password_hash,
+            )
+            .values(password_hash=account.password_hash, updated_at=Account.updated_at)
+            .returning(Account.id)
+            .execution_options(synchronize_session=False)
+        )
+        if matched is None:
+            raise InvalidCredentialsError
+        session_record, raw_token = _session_record(account.id, session_max_age_seconds)
+        database_session.add(session_record)
+        database_session.commit()
+    except Exception:
+        database_session.rollback()
+        raise
     return IssuedSession(account=account, session=session_record, raw_token=raw_token)
 
 
@@ -275,6 +298,47 @@ def resolve_session(
 def revoke_session(database_session: Session, authenticated: AuthenticatedSession) -> None:
     authenticated.session.revoked_at = datetime.now(UTC)
     database_session.commit()
+
+
+def change_password(
+    database_session: Session,
+    authenticated: AuthenticatedSession,
+    *,
+    current_password: str,
+    new_password: str,
+) -> None:
+    expected_hash = authenticated.account.password_hash
+    if not verify_password(current_password, expected_hash):
+        raise InvalidCredentialsError
+    if current_password == new_password:
+        raise UnchangedPasswordError
+    replacement_hash = hash_password(new_password)
+    try:
+        changed = database_session.scalar(
+            update(Account)
+            .where(
+                Account.id == authenticated.account.id,
+                Account.status == AccountStatus.ACTIVE,
+                Account.password_hash == expected_hash,
+            )
+            .values(password_hash=replacement_hash)
+            .returning(Account.id)
+            .execution_options(synchronize_session=False)
+        )
+        if changed is None:
+            raise InvalidCredentialsError
+        database_session.execute(
+            update(SessionRecord)
+            .where(
+                SessionRecord.account_id == authenticated.account.id,
+                SessionRecord.revoked_at.is_(None),
+            )
+            .values(revoked_at=datetime.now(UTC))
+        )
+        database_session.commit()
+    except Exception:
+        database_session.rollback()
+        raise
 
 
 def list_persons(database_session: Session, owner_account_id: uuid.UUID) -> list[Person]:

@@ -1138,6 +1138,9 @@ export default function Home() {
                 Log out
               </button>
             </div>
+            <a className="history-link" href="/account" data-testid="account-settings-link">
+              Account settings
+            </a>
             <ul className="persons" data-testid="person-list">
               {persons.map((person) => (
                 <li
@@ -1174,6 +1177,10 @@ export default function Home() {
             </ul>
             {selectedPerson ? (
               <div>
+                <a className="history-link" href={api.summaryExportUrl(selectedPerson.id)}
+                  data-testid="summary-export-link">
+                  Download health summary
+                </a>
                 <a
                   className="history-link"
                   data-testid="history-link"

@@ -10,6 +10,7 @@ export default defineConfig({
   testDir: ".",
   testMatch: [
     "identity.spec.ts",
+    "account_summary.spec.ts",
     "health_metrics.spec.ts",
     "symptom_logs.spec.ts",
     "health_actions.spec.ts",

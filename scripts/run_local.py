@@ -95,6 +95,8 @@ def run() -> int:
                     return return_code
             time.sleep(0.25)
     except KeyboardInterrupt:
+        # Make can forward the same terminal interrupt again during child cleanup.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         print("Stopping Healthy.")
         return 0
     finally:

@@ -764,7 +764,7 @@ class ReportIntakeSummary(BaseModel):
     source_name: str
     file_sha256: str
     media_type: str
-    extraction_method: Literal["digital_pdf", "ocr_image"]
+    extraction_method: report_intakes_domain.ExtractionMethod
     parser_metadata: dict[str, int | str | None]
     status: report_intakes_domain.ReportIntakeStatus
     pending_review: bool

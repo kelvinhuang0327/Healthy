@@ -28,12 +28,13 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:3000",
     browserName: "chromium",
+    channel: process.env.HEALTHY_BROWSER_CHANNEL === "chrome" ? "chrome" : undefined,
     trace: "retain-on-failure",
   },
   webServer: [
     {
       command:
-        "uv run --directory apps/api uvicorn healthy.main:app --host 127.0.0.1 --port 8000",
+        "uv run --directory apps/api python -m uvicorn healthy.main:app --host 127.0.0.1 --port 8000",
       cwd: process.cwd(),
       url: "http://127.0.0.1:8000/v1/session",
       reuseExistingServer: false,

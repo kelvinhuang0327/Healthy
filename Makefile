@@ -31,7 +31,7 @@ local: node-check local-db-up
 
 local-db-up:
 	$(LOCAL_ENV) uv run --directory apps/api python -m healthy.local_data prepare --directory "$(LOCAL_DATA_DIR)"
-	$(LOCAL_ENV) uv run alembic -c migrations/alembic.ini upgrade head
+	$(LOCAL_ENV) uv run python -m alembic -c migrations/alembic.ini upgrade head
 
 backup:
 	$(LOCAL_ENV) HEALTHY_BACKUP_DIR="$(LOCAL_BACKUP_DIR)" uv run --directory apps/api python -m healthy.local_data backup

@@ -2,27 +2,41 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import math
+import os
 import re
+import shlex
+import signal
+import subprocess
+import sys
+import tempfile
 import unicodedata
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import Literal, cast
 
 import pytesseract  # type: ignore[import-untyped]
 from PIL import Image, UnidentifiedImageError
-from pypdf import PdfReader
 from pytesseract import Output
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_CANDIDATE_COUNT = 100
-PARSER_VERSION = "report-intake-parser-v2"
+PARSER_VERSION = "report-intake-parser-v3"
+MAX_REPORT_PAGES = 10
+MAX_PAGE_PIXELS = 8_000_000
+MAX_TOTAL_PDF_PIXELS = 40_000_000
+MAX_EXTRACTED_CHARACTERS = 100_000
+PDF_TIMEOUT_SECONDS = 30
+OCR_TIMEOUT_SECONDS = 8
+OCR_RENDER_DPI = 150
+MIN_OCR_LINE_CONFIDENCE = Decimal("0.60")
 
 ALLOWED_MEDIA_TYPES = frozenset({"application/pdf", "image/jpeg", "image/png"})
-ExtractionMethod = Literal["digital_pdf", "ocr_image"]
+ExtractionMethod = Literal["digital_pdf", "ocr_image", "ocr_pdf", "mixed_pdf"]
 ReportIntakeStatus = Literal["pending_review", "confirmed", "failed"]
 
 
@@ -63,6 +77,15 @@ class ParsedReportIntake:
     page_count: int
     extracted_character_count: int
     observations: tuple[CandidateObservation, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractedPDF:
+    text: str
+    page_count: int
+    extraction_method: ExtractionMethod
+    line_provenances: tuple[str, ...]
+    line_confidences: tuple[Decimal | None, ...]
 
 
 def sanitize_filename(filename: str | None) -> str:
@@ -325,11 +348,16 @@ def parse_extracted_text(
     extraction_method: ExtractionMethod,
     page_count: int,
     line_confidences: tuple[Decimal | None, ...] = (),
+    line_provenances: tuple[str, ...] = (),
 ) -> ParsedReportIntake:
     lines = [
         unicodedata.normalize("NFKC", line).strip()
         for line in text.replace("\r\n", "\n").split("\n")
     ]
+    for index, line in enumerate(lines):
+        provenance = line_provenances[index] if index < len(line_provenances) else extraction_method
+        if provenance.startswith("ocr_"):
+            lines[index] = re.sub(r"(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])", "", line)
     source_name = source_name_from_filename(filename)
     reported_at: datetime | None = None
 
@@ -363,6 +391,19 @@ def parse_extracted_text(
         value_numeric, value_text, unit = _parse_candidate_value(raw_value)
         if value_numeric is None and value_text is None:
             continue
+        provenance = (
+            line_provenances[line_index]
+            if line_index < len(line_provenances)
+            else f"{extraction_method}:line-{line_index + 1}"
+        )
+        confidence = _line_confidence(line_confidences, line_index)
+        if provenance.startswith("ocr_") and (
+            code not in _ALIASES.values()
+            or value_numeric is None
+            or confidence is None
+            or confidence < MIN_OCR_LINE_CONFIDENCE
+        ):
+            continue
         observations.append(
             CandidateObservation(
                 code=code,
@@ -372,12 +413,14 @@ def parse_extracted_text(
                 unit=unit,
                 reference_range=reference_range,
                 observed_at=reported_at,
-                parser_provenance=f"{extraction_method}:line-{line_index + 1}",
-                parser_confidence=_line_confidence(line_confidences, line_index),
+                parser_provenance=provenance,
+                parser_confidence=confidence,
             )
         )
-        if len(observations) >= MAX_CANDIDATE_COUNT:
-            break
+        if len(observations) > MAX_CANDIDATE_COUNT:
+            raise ReportIntakeParserError(
+                "The report exceeds the 100 candidate limit. No partial candidates were saved."
+            )
 
     if not observations:
         raise ReportIntakeParserError("No candidate observations were found in the report.")
@@ -392,34 +435,95 @@ def parse_extracted_text(
     )
 
 
-def _extract_pdf_text(file_bytes: bytes) -> tuple[str, int]:
+def _extract_pdf_text(file_bytes: bytes) -> ExtractedPDF:
+    # A separate process bounds both PDF decoding and OCR, including native PDFium
+    # calls. Killing its process group also stops a running Tesseract subprocess.
+    environment = os.environ.copy()
+    source_root = str(Path(__file__).resolve().parents[2])
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (source_root, environment.get("PYTHONPATH")))
+    )
     try:
-        reader = PdfReader(io.BytesIO(file_bytes), strict=False)
-        page_text = [(page.extract_text() or "") for page in reader.pages]
-    except Exception as error:
-        raise ReportIntakeParserError("The PDF could not be read safely.") from error
-    text = "\n".join(page_text).strip()
-    if not text:
-        raise ReportIntakeParserError(
-            "No digital text was found. Scanned PDFs are not supported in this version."
+        with tempfile.TemporaryDirectory(prefix="healthy-report-ocr-") as scratch:
+            environment["TMPDIR"] = scratch
+            process = subprocess.Popen(  # noqa: S603
+                [sys.executable, "-m", "healthy.domain.report_pdf_worker"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+                start_new_session=True,
+            )
+            try:
+                output, _stderr = process.communicate(file_bytes, timeout=PDF_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired as error:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+                raise ReportIntakeParserError(
+                    "PDF processing exceeded the 30 second limit. No candidates were saved."
+                ) from error
+        if len(output) > MAX_EXTRACTED_CHARACTERS * 8 + 100_000:
+            raise ReportIntakeParserError("The PDF contains too much extracted text.")
+        result = json.loads(output)
+        if process.returncode != 0:
+            raise ReportIntakeParserError(result.get("error", "The PDF could not be read safely."))
+        method = result["extraction_method"]
+        if method not in {"digital_pdf", "ocr_pdf", "mixed_pdf"}:
+            raise ValueError("invalid extraction method")
+        return ExtractedPDF(
+            text=result["text"],
+            page_count=result["page_count"],
+            extraction_method=cast(ExtractionMethod, method),
+            line_provenances=tuple(result["line_provenances"]),
+            line_confidences=tuple(
+                Decimal(value) if value is not None else None
+                for value in result["line_confidences"]
+            ),
         )
-    return text, len(page_text)
+    except ReportIntakeParserError:
+        raise
+    except Exception as error:
+        raise ReportIntakeParserError("The PDF could not be processed safely.") from error
 
 
 def _extract_image_text(file_bytes: bytes) -> tuple[str, tuple[Decimal | None, ...]]:
     try:
         with Image.open(io.BytesIO(file_bytes)) as image:
+            if image.width * image.height > MAX_PAGE_PIXELS:
+                raise ReportIntakeParserError("The image exceeds the 8 million pixel limit.")
             image.load()
-            ocr_data = cast(
-                dict[str, list[object]],
-                pytesseract.image_to_data(image, output_type=Output.DICT, config="--psm 6"),
-            )
+            return _extract_pil_image_text(image)
+    except ReportIntakeParserError:
+        raise
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+        raise ReportIntakeParserError("The image could not be read safely.") from error
+
+
+def _extract_pil_image_text(
+    image: Image.Image, *, language: str = "eng"
+) -> tuple[str, tuple[Decimal | None, ...]]:
+    configuration = "--psm 6"
+    tessdata_directory = os.environ.get("HEALTHY_OCR_TESSDATA_DIR")
+    if tessdata_directory:
+        configuration += " --tessdata-dir " + shlex.quote(tessdata_directory)
+    try:
+        ocr_data = cast(
+            dict[str, list[object]],
+            pytesseract.image_to_data(
+                image,
+                output_type=Output.DICT,
+                config=configuration,
+                lang=language,
+                timeout=OCR_TIMEOUT_SECONDS,
+            ),
+        )
     except pytesseract.TesseractNotFoundError as error:
         raise ReportIntakeParserError("Image OCR is unavailable on this server.") from error
-    except (UnidentifiedImageError, OSError) as error:
-        raise ReportIntakeParserError("The image could not be read safely.") from error
     except Exception as error:
-        raise ReportIntakeParserError("The image could not be processed safely.") from error
+        raise ReportIntakeParserError(
+            "OCR failed or exceeded the 8 second page limit. "
+            "Check the local Tesseract language tools or enter the results manually."
+        ) from error
 
     texts = ocr_data.get("text", [])
     blocks = ocr_data.get("block_num", [])
@@ -473,12 +577,14 @@ def extract_and_parse(
     )
     del normalized_media_type
     if extraction_method == "digital_pdf":
-        text, page_count = _extract_pdf_text(file_bytes)
+        extracted = _extract_pdf_text(file_bytes)
         return parse_extracted_text(
-            text=text,
+            text=extracted.text,
             filename=filename,
-            extraction_method=extraction_method,
-            page_count=page_count,
+            extraction_method=extracted.extraction_method,
+            page_count=extracted.page_count,
+            line_provenances=extracted.line_provenances,
+            line_confidences=extracted.line_confidences,
         )
 
     text, line_confidences = _extract_image_text(file_bytes)

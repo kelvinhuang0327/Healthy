@@ -35,16 +35,10 @@ def run() -> int:
     web_environment = api_environment.copy()
     web_environment["HEALTHY_API_ORIGIN"] = "http://127.0.0.1:8000"
     processes: list[subprocess.Popen[bytes]] = []
-    uv_executable = shutil.which("uv")
     npm_executable = shutil.which("npm")
-    if uv_executable is None or npm_executable is None:
-        missing_tools = [
-            tool_name
-            for tool_name, executable in (("uv", uv_executable), ("npm", npm_executable))
-            if executable is None
-        ]
+    if npm_executable is None:
         print(
-            f"Cannot start Healthy; missing {', '.join(missing_tools)}. Run `make install` first.",
+            "Cannot start Healthy; missing npm. Run `make install` first.",
             file=sys.stderr,
         )
         return 2
@@ -53,10 +47,8 @@ def run() -> int:
         # Executables come from PATH; the argument lists below contain only fixed local commands.
         api = subprocess.Popen(  # noqa: S603
             [
-                uv_executable,
-                "run",
-                "--directory",
-                "apps/api",
+                sys.executable,
+                "-m",
                 "uvicorn",
                 "healthy.main:app",
                 "--host",
@@ -64,7 +56,7 @@ def run() -> int:
                 "--port",
                 "8000",
             ],
-            cwd=ROOT,
+            cwd=ROOT / "apps" / "api",
             env=api_environment,
             start_new_session=True,
         )

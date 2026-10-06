@@ -104,6 +104,15 @@ function intakeStatusLabel(intake: ReportIntake): string {
   }
 }
 
+function extractionMethodLabel(method: ReportIntake["extraction_method"]): string {
+  switch (method) {
+    case "digital_pdf": return "Digital PDF text";
+    case "ocr_image": return "Image OCR";
+    case "ocr_pdf": return "Scanned PDF OCR";
+    case "mixed_pdf": return "Digital text + scanned PDF OCR";
+  }
+}
+
 export default function ReportsPage() {
   const [session, setSession] = useState<SessionSummary | null>(null);
   const [persons, setPersons] = useState<Person[]>([]);
@@ -530,6 +539,18 @@ export default function ReportsPage() {
         current.map((intake) => (intake.id === detail.id ? detail : intake)),
       );
       setMessage("Report confirmed and added to Health History.");
+      if (detail.report_id) {
+        try {
+          const report = await api.healthReport(requestPersonId, detail.report_id);
+          if (isCurrentSelection(requestContext)) {
+            setConfirmedReport(report);
+          }
+        } catch {
+          if (isCurrentSelection(requestContext)) {
+            setError("Report confirmed, but its details could not be loaded. Reload this page to retry.");
+          }
+        }
+      }
     } catch (reason) {
       if (isCurrentSelection(requestContext)) {
         setError(
@@ -567,9 +588,7 @@ export default function ReportsPage() {
           <span className="pill">{intakeStatusLabel(intake)}</span>
         </button>
         <p>
-          {intake.extraction_method === "digital_pdf"
-            ? "Digital PDF text"
-            : "Image OCR"}
+          {extractionMethodLabel(intake.extraction_method)}
           {intake.reported_at
             ? ` · ${dateInputValue(intake.reported_at)}`
             : " · Report date needed"}
@@ -641,8 +660,10 @@ export default function ReportsPage() {
           <article className="card report-upload-card">
             <h2>Upload a health report</h2>
             <p className="muted">
-              Supported files: PDF, JPEG, and PNG. Files are extracted in memory
-              and are not saved as raw uploads.
+              Supported files: PDF, JPEG, and PNG, up to 10 MB. PDF reports are
+              limited to 10 pages and 30 seconds of processing. Scanned pages use
+              local OCR tools; unavailable tools or unreadable pages show a failure.
+              Temporary OCR images are deleted after processing. Raw uploads are not saved.
             </p>
             <form
               onSubmit={uploadReport}
@@ -701,14 +722,13 @@ export default function ReportsPage() {
                   <h2>Review extracted candidates</h2>
                 </div>
                 <span className="muted">
-                  {selectedIntake.extraction_method === "digital_pdf"
-                    ? "Digital PDF text"
-                    : "Image OCR"}
+                  {extractionMethodLabel(selectedIntake.extraction_method)}
                 </span>
               </div>
               <p className="review-warning" data-testid="report-review-warning">
-                Extraction is a draft. Check the source document and correct
-                every candidate before saving and confirming. No report is added
+                Extraction is a draft and may omit results. Compare every page
+                with the source document; only recognized numeric lab labels are
+                accepted from OCR. Correct every candidate before saving and confirming. No report is added
                 to Health History until you confirm it.
               </p>
               <form onSubmit={saveReview} data-testid="report-review-form">

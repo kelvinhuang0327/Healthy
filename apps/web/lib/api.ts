@@ -418,7 +418,7 @@ export type ReportIntake = {
   source_name: string;
   file_sha256: string;
   media_type: string;
-  extraction_method: "digital_pdf" | "ocr_image";
+  extraction_method: "digital_pdf" | "ocr_image" | "ocr_pdf" | "mixed_pdf";
   parser_metadata: Record<string, number | string | null>;
   status: "pending_review" | "confirmed" | "failed";
   pending_review: boolean;

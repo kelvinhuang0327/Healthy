@@ -8,7 +8,7 @@ from uuid import UUID
 import pytest
 from conftest import ORIGIN, csrf_headers, register
 from fastapi.testclient import TestClient
-from healthy.domain.report_intakes import MAX_UPLOAD_BYTES
+from healthy.domain.report_intakes import MAX_UPLOAD_BYTES, ExtractedPDF
 from healthy.infrastructure.database import Database
 from healthy.infrastructure.models import (
     HealthReportModel,
@@ -101,10 +101,17 @@ def test_chinese_candidates_remain_reviewable_and_keep_source_on_confirmation(
     # The synthetic PDF extraction seam isolates Unicode parsing from font encoding.
     monkeypatch.setattr(
         "healthy.domain.report_intakes._extract_pdf_text",
-        lambda _file_bytes: (
-            "來源：合成檢驗所\n報告日期：２０２６／１０／０１\n"
+        lambda _file_bytes: ExtractedPDF(
+            text="來源：合成檢驗所\n報告日期：２０２６／１０／０１\n"
             "血糖：９２．２５ mg/dL （參考值：６５－９９）",
-            1,
+            page_count=1,
+            extraction_method="digital_pdf",
+            line_provenances=(
+                "digital_pdf:page-1:line-1",
+                "digital_pdf:page-1:line-2",
+                "digital_pdf:page-1:line-3",
+            ),
+            line_confidences=(),
         ),
     )
     assert register(client).status_code == 201
@@ -118,7 +125,7 @@ def test_chinese_candidates_remain_reviewable_and_keep_source_on_confirmation(
     assert observation["code"] == "GLUCOSE"
     assert observation["display_name"] == "血糖"
     assert observation["value_numeric"] == 92.25
-    assert observation["parser_provenance"] == "digital_pdf:line-3"
+    assert observation["parser_provenance"] == "digital_pdf:page-1:line-3"
     assert intake["report_id"] is None
 
     patch = client.patch(
@@ -139,7 +146,7 @@ def test_chinese_candidates_remain_reviewable_and_keep_source_on_confirmation(
         },
     )
     assert patch.status_code == 200
-    assert patch.json()["observations"][0]["parser_provenance"] == "digital_pdf:line-3"
+    assert patch.json()["observations"][0]["parser_provenance"] == "digital_pdf:page-1:line-3"
     confirmed = client.post(
         f"/v1/persons/{person_id}/report-intakes/{intake['id']}/confirm",
         headers=csrf_headers(client),

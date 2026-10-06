@@ -2036,7 +2036,9 @@
           "extraction_method": {
             "enum": [
               "digital_pdf",
-              "ocr_image"
+              "ocr_image",
+              "ocr_pdf",
+              "mixed_pdf"
             ],
             "title": "Extraction Method",
             "type": "string"
@@ -2408,7 +2410,9 @@
           "extraction_method": {
             "enum": [
               "digital_pdf",
-              "ocr_image"
+              "ocr_image",
+              "ocr_pdf",
+              "mixed_pdf"
             ],
             "title": "Extraction Method",
             "type": "string"

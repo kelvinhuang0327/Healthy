@@ -18,6 +18,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+report-ocr = [
+  "pypdfium2==5.14.0",
+]
 legacy-postgres = [
   "psycopg[binary]==3.3.4",
 ]

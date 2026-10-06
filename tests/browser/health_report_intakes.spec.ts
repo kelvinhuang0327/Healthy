@@ -1,5 +1,37 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+for (const scenario of [
+  { variable: "HEALTHY_TEST_SCANNED_PDF_PATH", label: "Scanned PDF OCR" },
+  { variable: "HEALTHY_TEST_MIXED_PDF_PATH", label: "Digital text + scanned PDF OCR" },
+]) {
+  test(`real ${scenario.label} requires correction and persists confirmation on mobile`, async ({ page }) => {
+    test.setTimeout(60_000);
+    const fixture = process.env[scenario.variable];
+    test.skip(!fixture, `Provide ${scenario.variable} with a synthetic raster PDF and local OCR tools`);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await register(page, `ocr-${scenario.variable}-${Date.now()}@example.com`, "Synthetic OCR Owner");
+    await page.getByTestId("person-card").first().click();
+    await page.getByTestId("reports-link").click();
+    await page.getByTestId("report-file-input").setInputFiles(fixture as string);
+    await page.getByTestId("report-upload-button").click();
+    await expect(page.getByTestId("report-review-section")).toBeVisible({ timeout: 35_000 });
+    await expect(page.getByTestId("report-review-section")).toContainText(scenario.label);
+    await expect(page.getByTestId("report-review-warning")).toContainText("may omit results");
+    await expect(page.getByTestId("report-review-section")).toContainText("ocr_pdf:page-");
+    const firstValue = page.getByTestId("report-candidate-value").first();
+    await firstValue.fill("93.25");
+    await page.getByTestId("report-review-save").click();
+    await expect(page.getByTestId("report-intake-message")).toContainText("saved");
+    await page.reload();
+    await expect(firstValue).toHaveValue("93.25");
+    await page.getByTestId("report-review-confirm").click();
+    await expect(page.getByTestId("confirmed-health-report")).toContainText("93.25");
+    await page.reload();
+    await expect(page.getByTestId("confirmed-health-report")).toContainText("93.25");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}
+
 const password = "Synthetic-Only-Password-42";
 
 async function register(

@@ -95,6 +95,67 @@ def _upload_pdf(
     )
 
 
+def test_chinese_candidates_remain_reviewable_and_keep_source_on_confirmation(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The synthetic PDF extraction seam isolates Unicode parsing from font encoding.
+    monkeypatch.setattr(
+        "healthy.domain.report_intakes._extract_pdf_text",
+        lambda _file_bytes: (
+            "來源：合成檢驗所\n報告日期：２０２６／１０／０１\n"
+            "血糖：９２．２５ mg/dL （參考值：６５－９９）",
+            1,
+        ),
+    )
+    assert register(client).status_code == 201
+    person_id = _person_id(client)
+    upload = _upload_pdf(client, person_id, ["Glucose: 92.25"])
+    assert upload.status_code == 201
+    intake = upload.json()
+    assert intake["status"] == "pending_review"
+    assert intake["pending_review"] is True
+    observation = intake["observations"][0]
+    assert observation["code"] == "GLUCOSE"
+    assert observation["display_name"] == "血糖"
+    assert observation["value_numeric"] == 92.25
+    assert observation["parser_provenance"] == "digital_pdf:line-3"
+    assert intake["report_id"] is None
+
+    patch = client.patch(
+        f"/v1/persons/{person_id}/report-intakes/{intake['id']}",
+        headers=csrf_headers(client),
+        json={
+            "observations": [
+                {
+                    "id": observation["id"],
+                    "code": observation["code"],
+                    "display_name": observation["display_name"],
+                    "value_numeric": 93.25,
+                    "unit": observation["unit"],
+                    "reference_range": observation["reference_range"],
+                    "observed_at": observation["observed_at"],
+                }
+            ],
+        },
+    )
+    assert patch.status_code == 200
+    assert patch.json()["observations"][0]["parser_provenance"] == "digital_pdf:line-3"
+    confirmed = client.post(
+        f"/v1/persons/{person_id}/report-intakes/{intake['id']}/confirm",
+        headers=csrf_headers(client),
+    )
+    assert confirmed.status_code == 200
+    canonical = client.get(
+        f"/v1/persons/{person_id}/reports/{confirmed.json()['report_id']}"
+    ).json()
+    assert canonical["source_name"] == "合成檢驗所"
+    assert canonical["reported_at"] == "2026-10-01T00:00:00Z"
+    assert canonical["observations"][0]["code"] == "GLUCOSE"
+    assert canonical["observations"][0]["display_name"] == "血糖"
+    assert canonical["observations"][0]["value_numeric"] == 93.25
+    assert canonical["observations"][0]["reference_range"] == "65-99"
+
+
 def test_digital_pdf_review_confirmation_idempotency_and_sqlite_persistence(
     client: TestClient,
 ) -> None:

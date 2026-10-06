@@ -19,7 +19,7 @@ from pytesseract import Output
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_CANDIDATE_COUNT = 100
-PARSER_VERSION = "report-intake-parser-v1"
+PARSER_VERSION = "report-intake-parser-v2"
 
 ALLOWED_MEDIA_TYPES = frozenset({"application/pdf", "image/jpeg", "image/png"})
 ExtractionMethod = Literal["digital_pdf", "ocr_image"]
@@ -147,22 +147,27 @@ def _parse_datetime(value: str) -> datetime | None:
 
 
 _DATE_LINE_RE = re.compile(
-    r"^\s*(?:report\s+date|date\s+of\s+report|collection\s+date|collected\s+on)"
+    r"^\s*(?:report\s+date|date\s+of\s+report|collection\s+date|collected\s+on"
+    r"|報告日期|採檢日期|檢查日期)"
     r"\s*[:=]\s*(?P<value>.+?)\s*$",
     re.IGNORECASE,
 )
 _SOURCE_LINE_RE = re.compile(
-    r"^\s*(?:source|source\s+name|laboratory|lab|facility)\s*[:=]\s*(?P<value>.+?)\s*$",
+    r"^\s*(?:source|source\s+name|laboratory|lab|facility|來源|檢驗機構|檢驗單位|醫院)"
+    r"\s*[:=]\s*(?P<value>.+?)\s*$",
     re.IGNORECASE,
 )
 _FIELD_LINE_RE = re.compile(
-    r"^\s*(?P<label>[A-Za-z][A-Za-z0-9 _/%()\-]{0,126}?)"
+    r"^\s*(?P<label>[A-Za-z\u3400-\u9fff][A-Za-z0-9\u3400-\u9fff _/%()\-]{0,126}?)"
     r"(?:\s*[:=]\s*|\t+|\s{2,})(?P<value>.+?)\s*$"
 )
 _NUMBER_RE = re.compile(r"(?<![A-Za-z])[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?")
+_REFERENCE_LABEL = (
+    r"(?:reference|ref(?:erence)?(?:\s+range)?|normal(?:\s+range)?"
+    r"|參考值|參考範圍|正常範圍)"
+)
 _EXPLICIT_REFERENCE_RE = re.compile(
-    r"(?:reference|ref(?:erence)?(?:\s+range)?|normal(?:\s+range)?)"
-    r"\s*[:=]\s*(?P<value>[^,;|)]+)",
+    _REFERENCE_LABEL + r"\s*[:=]\s*(?P<value>[^,;|)]+)",
     re.IGNORECASE,
 )
 _REFERENCE_SHAPE_RE = re.compile(
@@ -180,7 +185,39 @@ _ALIASES = {
     "glucose": "GLUCOSE",
     "hemoglobin a1c": "HEMOGLOBIN_A1C",
     "hba1c": "HEMOGLOBIN_A1C",
+    "glu": "GLUCOSE",
+    "血糖": "GLUCOSE",
+    "空腹血糖": "GLUCOSE",
+    "糖化血紅素": "HEMOGLOBIN_A1C",
+    "糖化血色素": "HEMOGLOBIN_A1C",
+    "alt": "ALT",
+    "gpt": "ALT",
+    "丙胺酸轉氨酶": "ALT",
+    "ast": "AST",
+    "got": "AST",
+    "天門冬胺酸轉氨酶": "AST",
+    "uric acid": "URIC_ACID",
+    "尿酸": "URIC_ACID",
+    "total cholesterol": "TOTAL_CHOLESTEROL",
+    "膽固醇": "TOTAL_CHOLESTEROL",
+    "總膽固醇": "TOTAL_CHOLESTEROL",
+    "ldl": "LDL",
+    "低密度脂蛋白膽固醇": "LDL",
+    "hdl": "HDL",
+    "高密度脂蛋白膽固醇": "HDL",
+    "triglycerides": "TRIGLYCERIDES",
+    "三酸甘油脂": "TRIGLYCERIDES",
+    "三酸甘油酯": "TRIGLYCERIDES",
+    "hemoglobin": "HEMOGLOBIN",
+    "血紅素": "HEMOGLOBIN",
 }
+# A single-space table separator is accepted only for an exact known Chinese label
+# followed by a numeric result. General labels retain the existing stricter separators.
+_CHINESE_FIELD_LINE_RE = re.compile(
+    r"^\s*(?P<label>"
+    + "|".join(re.escape(alias) for alias in _ALIASES if re.search(r"[\u3400-\u9fff]", alias))
+    + r")\s+(?P<value>[-+]?\d.*)\s*$"
+)
 _IGNORED_LABELS = {
     "accession",
     "address",
@@ -211,7 +248,7 @@ _IGNORED_LABELS = {
 def _clean_reference(value: str) -> str | None:
     cleaned = re.sub(r"\s+", " ", value.strip())
     cleaned = re.sub(
-        r"^(?:reference|ref(?:erence)?(?:\s+range)?|normal(?:\s+range)?)\s*[:=]\s*",
+        r"^" + _REFERENCE_LABEL + r"\s*[:=]\s*",
         "",
         cleaned,
         flags=re.IGNORECASE,
@@ -244,6 +281,10 @@ def _normalise_code(label: str) -> str:
     alias = _ALIASES.get(clean_label.casefold())
     if alias:
         return alias
+    # Reject unknown Chinese or mixed labels instead of stripping the Chinese
+    # portion and accidentally turning patient metadata into a canonical lab code.
+    if re.search(r"[\u3400-\u9fff]", clean_label):
+        return ""
     code = re.sub(r"[^A-Za-z0-9]+", "_", clean_label).strip("_").upper()
     return code[:64]
 
@@ -285,7 +326,10 @@ def parse_extracted_text(
     page_count: int,
     line_confidences: tuple[Decimal | None, ...] = (),
 ) -> ParsedReportIntake:
-    lines = [line.strip() for line in text.replace("\r\n", "\n").split("\n")]
+    lines = [
+        unicodedata.normalize("NFKC", line).strip()
+        for line in text.replace("\r\n", "\n").split("\n")
+    ]
     source_name = source_name_from_filename(filename)
     reported_at: datetime | None = None
 
@@ -303,7 +347,7 @@ def parse_extracted_text(
 
     observations: list[CandidateObservation] = []
     for line_index, line in enumerate(lines):
-        field_match = _FIELD_LINE_RE.match(line)
+        field_match = _FIELD_LINE_RE.match(line) or _CHINESE_FIELD_LINE_RE.match(line)
         if field_match is None:
             continue
         label = re.sub(r"\s+", " ", field_match.group("label")).strip()

@@ -290,6 +290,20 @@
         "title": "AssistantTodaySummary",
         "type": "object"
       },
+      "Body_retry_failed_report_intake_v1_persons__person_id__report_intakes__intake_id__retry_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_retry_failed_report_intake_v1_persons__person_id__report_intakes__intake_id__retry_post",
+        "type": "object"
+      },
       "Body_upload_report_intake_v1_persons__person_id__report_intakes_post": {
         "properties": {
           "file": {
@@ -5489,6 +5503,103 @@
           }
         ],
         "summary": "Confirm Report Intake"
+      }
+    },
+    "/v1/persons/{person_id}/report-intakes/{intake_id}/retry": {
+      "post": {
+        "operationId": "retry_failed_report_intake_v1_persons__person_id__report_intakes__intake_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Person Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "intake_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Intake Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "healthy_csrf",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Healthy Csrf"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_retry_failed_report_intake_v1_persons__person_id__report_intakes__intake_id__retry_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportIntakeDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieSession": []
+          }
+        ],
+        "summary": "Retry Failed Report Intake"
       }
     },
     "/v1/persons/{person_id}/reports": {

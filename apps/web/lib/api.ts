@@ -662,6 +662,14 @@ export const api = {
       body: form,
     });
   },
+  retryReportIntake: (personId: string, intakeId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<ReportIntakeDetail>(
+      `/persons/${personId}/report-intakes/${intakeId}/retry`,
+      { method: "POST", body: form },
+    );
+  },
   updateReportIntake: (
     personId: string,
     intakeId: string,

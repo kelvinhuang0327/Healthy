@@ -1629,6 +1629,103 @@ def create_report_intake(
     return intake, False
 
 
+def retry_report_intake(
+    database_session: Session,
+    *,
+    owner_account_id: uuid.UUID,
+    person_id: uuid.UUID,
+    intake_id: uuid.UUID,
+    filename: str | None,
+    media_type: str | None,
+    file_bytes: bytes,
+    now: datetime,
+) -> ReportIntakeModel | None:
+    person = PersonRepository.get_for_owner(database_session, owner_account_id, person_id)
+    if person is None:
+        return None
+    intake = ReportIntakeRepository.get_for_person(database_session, person.id, intake_id)
+    if intake is None:
+        return None
+    if intake.status != "failed":
+        raise ReportIntakeInvalidStateError("Only failed report intakes can be retried.")
+    normalized_media_type, extraction_method = report_intakes_domain.validate_upload(
+        filename=filename, media_type=media_type, file_bytes=file_bytes
+    )
+    if report_intakes_domain.sha256_for_bytes(file_bytes) != intake.file_sha256:
+        raise ReportIntakeValidationError("Choose the original file for this failed report.")
+    expected_updated_at = intake.updated_at
+    updated_at = max(now.astimezone(UTC), expected_updated_at + timedelta(microseconds=1))
+    observations: list[dict[str, Any]] = []
+    try:
+        parsed = report_intakes_domain.extract_and_parse(
+            filename=intake.source_filename,
+            media_type=normalized_media_type,
+            file_bytes=file_bytes,
+        )
+        values = {
+            "source_name": report_intakes_domain.sanitize_source_name(parsed.source_name)
+            or report_intakes_domain.source_name_from_filename(intake.source_filename),
+            "media_type": normalized_media_type,
+            "extraction_method": parsed.extraction_method,
+            "parser_version": report_intakes_domain.PARSER_VERSION,
+            "page_count": parsed.page_count,
+            "extracted_character_count": parsed.extracted_character_count,
+            "reported_at": parsed.reported_at,
+            "status": "pending_review",
+            "pending_review": True,
+            "error_message": None,
+        }
+        observations = [
+            {
+                "code": row.code,
+                "display_name": row.display_name,
+                "value_numeric": row.value_numeric,
+                "value_text": row.value_text,
+                "unit": row.unit,
+                "reference_range": row.reference_range,
+                "observed_at": row.observed_at,
+                "parser_provenance": row.parser_provenance,
+                "parser_confidence": row.parser_confidence,
+            }
+            for row in parsed.observations
+        ]
+    except report_intakes_domain.ReportIntakeParserError as error:
+        values = {
+            "media_type": normalized_media_type,
+            "extraction_method": extraction_method,
+            "parser_version": report_intakes_domain.PARSER_VERSION,
+            "page_count": None,
+            "extracted_character_count": None,
+            "reported_at": None,
+            "status": "failed",
+            "pending_review": False,
+            "error_message": str(error),
+        }
+    try:
+        matched = ReportIntakeRepository.replace_failed_extraction(
+            database_session,
+            intake,
+            expected_updated_at=expected_updated_at,
+            updated_at=updated_at,
+            values=values,
+            observations=observations,
+        )
+        if matched:
+            database_session.commit()
+        else:
+            # A competing request won. Return its persisted state, including any
+            # subsequent review, without replacing its values or its candidates.
+            database_session.rollback()
+    except IntegrityError as error:
+        database_session.rollback()
+        raise ReportIntakeIntegrityError("Failed to store the report retry.") from error
+    except Exception:
+        database_session.rollback()
+        raise
+    database_session.expire_all()
+    return ReportIntakeRepository.get_for_person(database_session, person_id, intake_id)
+
+
 def list_report_intakes(
     database_session: Session,
     *,

@@ -1486,6 +1486,49 @@ async def upload_report_intake(
     return _report_intake_detail(intake)
 
 
+@router.post(
+    "/persons/{person_id}/report-intakes/{intake_id}/retry",
+    response_model=ReportIntakeDetail,
+    dependencies=[Depends(require_origin)],
+)
+async def retry_failed_report_intake(
+    person_id: uuid.UUID,
+    intake_id: uuid.UUID,
+    file: Annotated[UploadFile, File(...)],
+    authenticated: Annotated[AuthenticatedSession, Depends(get_command_session)],
+    database_session: Annotated[Session, Depends(get_database_session)],
+) -> ReportIntakeDetail:
+    try:
+        file_bytes = await file.read(report_intakes_domain.MAX_UPLOAD_BYTES + 1)
+        intake = services.retry_report_intake(
+            database_session,
+            owner_account_id=authenticated.account.id,
+            person_id=person_id,
+            intake_id=intake_id,
+            filename=file.filename,
+            media_type=file.content_type or mimetypes.guess_type(file.filename or "")[0],
+            file_bytes=file_bytes,
+            now=datetime.now(UTC),
+        )
+    except report_intakes_domain.ReportIntakeTooLargeError as error:
+        raise HTTPException(status_code=413, detail=str(error)) from error
+    except report_intakes_domain.ReportIntakeUnsupportedTypeError as error:
+        raise HTTPException(status_code=415, detail=str(error)) from error
+    except services.ReportIntakeInvalidStateError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except services.ReportIntakeValidationError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except services.ReportIntakeIntegrityError as error:
+        raise HTTPException(
+            status_code=422, detail="The report retry could not be stored."
+        ) from error
+    finally:
+        await file.close()
+    if intake is None:
+        raise HTTPException(status_code=404, detail="Report intake not found")
+    return _report_intake_detail(intake)
+
+
 @router.get(
     "/persons/{person_id}/report-intakes",
     response_model=list[ReportIntakeSummary],

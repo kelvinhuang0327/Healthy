@@ -1132,10 +1132,23 @@ class ReportIntakeRepository:
         )
         database_session.add(intake)
         database_session.flush()
+        ReportIntakeRepository._add_observations(
+            database_session, intake.id, observations=observations, created_at=created_at
+        )
+        return intake
+
+    @staticmethod
+    def _add_observations(
+        database_session: Session,
+        intake_id: uuid.UUID,
+        *,
+        observations: list[dict[str, Any]],
+        created_at: datetime,
+    ) -> None:
         for ordinal, observation_data in enumerate(observations):
             database_session.add(
                 ReportIntakeObservationModel(
-                    intake_id=intake.id,
+                    intake_id=intake_id,
                     ordinal=ordinal,
                     code=observation_data["code"],
                     display_name=observation_data["display_name"],
@@ -1151,7 +1164,44 @@ class ReportIntakeRepository:
                 )
             )
         database_session.flush()
-        return intake
+
+    @staticmethod
+    def replace_failed_extraction(
+        database_session: Session,
+        intake: ReportIntakeModel,
+        *,
+        expected_updated_at: datetime,
+        updated_at: datetime,
+        values: dict[str, Any],
+        observations: list[dict[str, Any]],
+    ) -> bool:
+        # Compare-and-swap after extraction: never hold a DB write lock during OCR,
+        # and never let a stale retry overwrite another retry or a human review.
+        matched = database_session.scalar(
+            update(ReportIntakeModel)
+            .where(
+                ReportIntakeModel.id == intake.id,
+                ReportIntakeModel.person_id == intake.person_id,
+                ReportIntakeModel.file_sha256 == intake.file_sha256,
+                ReportIntakeModel.status == "failed",
+                ReportIntakeModel.updated_at == expected_updated_at,
+                ReportIntakeModel.report_id.is_(None),
+            )
+            .values(**values, updated_at=updated_at)
+            .returning(ReportIntakeModel.id)
+            .execution_options(synchronize_session=False)
+        )
+        if matched is None:
+            return False
+        database_session.execute(
+            delete(ReportIntakeObservationModel).where(
+                ReportIntakeObservationModel.intake_id == intake.id
+            )
+        )
+        ReportIntakeRepository._add_observations(
+            database_session, intake.id, observations=observations, created_at=updated_at
+        )
+        return True
 
     @staticmethod
     def create_failed_intake(

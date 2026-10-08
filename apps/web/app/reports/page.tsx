@@ -392,6 +392,11 @@ export default function ReportsPage() {
 
   async function uploadReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await extractReport();
+  }
+
+  async function extractReport(retryIntakeId?: string) {
+    if (uploading) return;
     const requestPersonId = selectedPersonId;
     const requestFile = selectedFile;
     const requestContext = { ...selectionContextRef.current };
@@ -403,14 +408,16 @@ export default function ReportsPage() {
       setError("Choose a PDF, JPEG, or PNG report file first.");
       return;
     }
+    if (retryIntakeId && (
+      requestContext.intakeId !== retryIntakeId || selectedIntake?.status !== "failed"
+    )) return;
     setUploading(true);
     setError("");
     setMessage("");
     try {
-      const detail = await api.createReportIntake(
-        requestPersonId,
-        requestFile,
-      );
+      const detail = retryIntakeId
+        ? await api.retryReportIntake(requestPersonId, retryIntakeId, requestFile)
+        : await api.createReportIntake(requestPersonId, requestFile);
       if (!isCurrentSelection(requestContext)) {
         return;
       }
@@ -432,7 +439,9 @@ export default function ReportsPage() {
       setMessage(
         detail.status === "pending_review"
           ? "Report extracted. Review every candidate before confirming."
-          : (detail.error_message ?? "The report could not be extracted."),
+          : detail.status === "confirmed"
+            ? "This report is already confirmed. Its reviewed values were preserved."
+            : (detail.error_message ?? "The report could not be extracted."),
       );
     } catch (reason) {
       if (isCurrentSelection(requestContext)) {
@@ -687,6 +696,23 @@ export default function ReportsPage() {
                 {uploading ? "Extracting report…" : "Upload and extract"}
               </button>
             </form>
+            {selectedIntake?.status === "failed" ? (
+              <div data-testid="report-retry-section">
+                <p>
+                  To retry <strong>{selectedIntake.source_filename}</strong>, choose
+                  the original file above, then retry after resolving the failure.
+                  A successful retry still requires your review and confirmation.
+                </p>
+                <button
+                  type="button"
+                  disabled={uploading || !selectedFile}
+                  onClick={() => void extractReport(selectedIntake.id)}
+                  data-testid="report-retry-button"
+                >
+                  {uploading ? "Retrying report…" : "Retry this failed report"}
+                </button>
+              </div>
+            ) : null}
           </article>
 
           <section className="card" data-testid="report-intake-list-section">

@@ -174,6 +174,16 @@ export default function ReportsPage() {
     setDirty(false);
   }
 
+  function showReviewDetail(detail: ReportIntakeDetail) {
+    setSelectedIntake(detail);
+    setConfirmedReport(null);
+    setSourceName(detail.source_name);
+    setReportedAt(dateInputValue(detail.reported_at));
+    setObservations(detail.observations.map(observationForReview));
+    setDirty(false);
+    setLoadedDetailId(detail.id);
+  }
+
   useEffect(() => {
     let cancelled = false;
     Promise.all([api.session(), api.persons()])
@@ -292,12 +302,7 @@ export default function ReportsPage() {
         if (cancelled || !isCurrentSelection(requestContext)) {
           return;
         }
-        setSelectedIntake(detail);
-        setConfirmedReport(null);
-        setSourceName(detail.source_name);
-        setReportedAt(dateInputValue(detail.reported_at));
-        setObservations(detail.observations.map(observationForReview));
-        setDirty(false);
+        showReviewDetail(detail);
         if (detail.status === "confirmed" && detail.report_id) {
           api
             .healthReport(requestPersonId, detail.report_id)
@@ -312,7 +317,6 @@ export default function ReportsPage() {
               }
             });
         }
-        setLoadedDetailId(requestIntakeId);
       })
       .catch((reason) => {
         if (!cancelled && isCurrentSelection(requestContext)) {
@@ -435,7 +439,9 @@ export default function ReportsPage() {
       ]);
       setSelectionContext(requestPersonId, detail.id);
       setSelectedIntakeId(detail.id);
-      clearReviewState();
+      // Retry and duplicate uploads preserve the ID, so the selection effect
+      // will not run again. Hydrate from the server response immediately.
+      showReviewDetail(detail);
       setMessage(
         detail.status === "pending_review"
           ? "Report extracted. Review every candidate before confirming."
@@ -443,6 +449,17 @@ export default function ReportsPage() {
             ? "This report is already confirmed. Its reviewed values were preserved."
             : (detail.error_message ?? "The report could not be extracted."),
       );
+      if (detail.status === "confirmed" && detail.report_id) {
+        const loadedContext = { ...selectionContextRef.current };
+        try {
+          const report = await api.healthReport(requestPersonId, detail.report_id);
+          if (isCurrentSelection(loadedContext)) setConfirmedReport(report);
+        } catch {
+          if (isCurrentSelection(loadedContext)) {
+            setError("The confirmed report could not be loaded. Reload this page to retry.");
+          }
+        }
+      }
     } catch (reason) {
       if (isCurrentSelection(requestContext)) {
         setError(

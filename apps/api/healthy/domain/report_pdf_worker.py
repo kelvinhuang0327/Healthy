@@ -8,6 +8,7 @@ import json
 import math
 import os
 import sys
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
@@ -41,6 +42,39 @@ def _require_pdf_ocr_tools() -> ModuleType:
         ) from error
 
 
+@dataclass(frozen=True, slots=True)
+class _PageText:
+    page_index: int
+    text: str
+    method: reports.ExtractionMethod
+    confidences: tuple[Decimal | None, ...] = ()
+
+
+def _compose(pages: list[_PageText], metadata_text: str | None = None) -> reports.ExtractedPDF:
+    lines: list[str] = []
+    provenances: list[str] = []
+    confidences: list[Decimal | None] = []
+    for page in pages:
+        page_lines = page.text.replace("\r\n", "\n").split("\n")
+        lines.extend(page_lines)
+        for index in range(len(page_lines)):
+            provenances.append(f"{page.method}:page-{page.page_index + 1}:line-{index + 1}")
+            confidences.append(page.confidences[index] if index < len(page.confidences) else None)
+    method = (
+        pages[0].method
+        if metadata_text is None and all(page.method == pages[0].method for page in pages)
+        else "mixed_pdf"
+    )
+    return reports.ExtractedPDF(
+        text="\n".join(lines),
+        page_count=len(pages),
+        extraction_method=method,
+        line_provenances=tuple(provenances),
+        line_confidences=tuple(confidences),
+        metadata_text=metadata_text,
+    )
+
+
 def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
     try:
         reader = PdfReader(io.BytesIO(file_bytes), strict=False)
@@ -54,81 +88,98 @@ def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
     if not 1 <= page_count <= reports.MAX_REPORT_PAGES:
         raise reports.ReportIntakeParserError("PDF reports must contain between 1 and 10 pages.")
 
-    all_lines: list[str] = []
-    provenances: list[str] = []
-    confidences: list[str | None] = []
-    methods: set[str] = set()
+    pages: list[_PageText] = []
     characters = 0
+    charged_chunks = 0
     total_pixels = 0
     document = None
+
+    def charge_text(text: str) -> None:
+        nonlocal characters, charged_chunks
+        # Both passes share one budget, including original metadata and separators.
+        characters += len(text) + (1 if charged_chunks else 0)
+        charged_chunks += 1
+        if characters > reports.MAX_EXTRACTED_CHARACTERS:
+            raise reports.ReportIntakeParserError("The PDF contains too much extracted text.")
+
+    def ocr_page(page_index: int, *, fallback: bool = False) -> _PageText:
+        nonlocal document, total_pixels
+        if document is None:
+            tools = _require_pdf_ocr_tools()
+            document = tools.PdfDocument(file_bytes)
+        page = document[page_index]
+        bitmap = None
+        image = None
+        try:
+            width, height = page.get_size()
+            scale = reports.OCR_RENDER_DPI / 72
+            if not all(math.isfinite(value) and value > 0 for value in (width, height)):
+                raise reports.ReportIntakeParserError("The PDF page dimensions are invalid.")
+            pixels = math.ceil(width * scale) * math.ceil(height * scale)
+            if pixels > reports.MAX_PAGE_PIXELS:
+                raise reports.ReportIntakeParserError(
+                    f"PDF page {page_index + 1} exceeds the 8 million pixel render limit."
+                )
+            total_pixels += pixels
+            if total_pixels > reports.MAX_TOTAL_PDF_PIXELS:
+                raise reports.ReportIntakeParserError(
+                    "The PDF exceeds the 40 million pixel total OCR limit."
+                )
+            bitmap = page.render(scale=scale)
+            image = bitmap.to_pil()
+            if image.width * image.height > reports.MAX_PAGE_PIXELS:
+                raise reports.ReportIntakeParserError("The rendered PDF page is too large.")
+            text, confidence = reports._extract_pil_image_text(image, language="chi_tra+eng")
+        finally:
+            if image is not None:
+                image.close()
+            if bitmap is not None:
+                bitmap.close()
+            page.close()
+        charge_text(text)
+        try:
+            reports.parse_extracted_text(
+                text=text,
+                filename=None,
+                extraction_method="ocr_pdf",
+                page_count=1,
+                line_confidences=confidence,
+            )
+        except reports.ReportIntakeParserError as error:
+            label = "PDF OCR fallback" if fallback else "Scanned PDF"
+            raise reports.ReportIntakeParserError(
+                f"{label} page {page_index + 1} could not be parsed reliably. "
+                "No partial candidates were saved; enter results manually."
+            ) from error
+        return _PageText(page_index, text, "ocr_pdf", confidence)
+
     try:
         for page_index, pdf_page in enumerate(reader.pages):
             text = (pdf_page.extract_text() or "").strip()
-            method = "digital_pdf"
-            page_confidences: tuple[Decimal | None, ...] = ()
             if not text:
-                method = "ocr_pdf"
-                if document is None:
-                    tools = _require_pdf_ocr_tools()
-                    document = tools.PdfDocument(file_bytes)
-                page = document[page_index]
-                bitmap = None
-                image = None
-                try:
-                    width, height = page.get_size()
-                    scale = reports.OCR_RENDER_DPI / 72
-                    if not all(math.isfinite(value) and value > 0 for value in (width, height)):
-                        raise reports.ReportIntakeParserError(
-                            "The PDF page dimensions are invalid."
-                        )
-                    pixels = math.ceil(width * scale) * math.ceil(height * scale)
-                    if pixels > reports.MAX_PAGE_PIXELS:
-                        raise reports.ReportIntakeParserError(
-                            f"PDF page {page_index + 1} exceeds the 8 million pixel render limit."
-                        )
-                    total_pixels += pixels
-                    if total_pixels > reports.MAX_TOTAL_PDF_PIXELS:
-                        raise reports.ReportIntakeParserError(
-                            "The PDF exceeds the 40 million pixel total OCR limit."
-                        )
-                    bitmap = page.render(scale=scale)
-                    image = bitmap.to_pil()
-                    if image.width * image.height > reports.MAX_PAGE_PIXELS:
-                        raise reports.ReportIntakeParserError("The rendered PDF page is too large.")
-                    text, page_confidences = reports._extract_pil_image_text(
-                        image, language="chi_tra+eng"
-                    )
-                finally:
-                    if image is not None:
-                        image.close()
-                    if bitmap is not None:
-                        bitmap.close()
-                    page.close()
-                try:
-                    reports.parse_extracted_text(
-                        text=text,
-                        filename=None,
-                        extraction_method="ocr_pdf",
-                        page_count=1,
-                        line_confidences=page_confidences,
-                    )
-                except reports.ReportIntakeParserError as error:
-                    raise reports.ReportIntakeParserError(
-                        f"Scanned PDF page {page_index + 1} could not be parsed reliably. "
-                        "No partial candidates were saved; enter results manually."
-                    ) from error
-            characters += len(text)
-            if characters > reports.MAX_EXTRACTED_CHARACTERS:
-                raise reports.ReportIntakeParserError("The PDF contains too much extracted text.")
-            page_lines = text.replace("\r\n", "\n").split("\n")
-            all_lines.extend(page_lines)
-            methods.add(method)
-            for line_index in range(len(page_lines)):
-                provenances.append(f"{method}:page-{page_index + 1}:line-{line_index + 1}")
-                confidence = (
-                    page_confidences[line_index] if line_index < len(page_confidences) else None
-                )
-                confidences.append(str(confidence) if confidence is not None else None)
+                pages.append(ocr_page(page_index))
+            else:
+                charge_text(text)
+                pages.append(_PageText(page_index, text, "digital_pdf"))
+        extracted = _compose(pages)
+        try:
+            reports.parse_extracted_text(
+                text=extracted.text,
+                filename=None,
+                extraction_method=extracted.extraction_method,
+                page_count=page_count,
+                line_provenances=extracted.line_provenances,
+                line_confidences=extracted.line_confidences,
+            )
+        except reports.NoCandidateObservationsError:
+            # Only a document-wide absence of candidates permits fallback.
+            # Never reset budgets or supplement an already parsed partial report.
+            original_text = extracted.text
+            pages = [
+                ocr_page(page.page_index, fallback=True) if page.method == "digital_pdf" else page
+                for page in pages
+            ]
+            extracted = _compose(pages, metadata_text=original_text)
     except reports.ReportIntakeParserError:
         raise
     except Exception as error:
@@ -136,13 +187,15 @@ def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
     finally:
         if document is not None:
             document.close()
-    method_summary = next(iter(methods)) if len(methods) == 1 else "mixed_pdf"
     return {
-        "text": "\n".join(all_lines),
+        "text": extracted.text,
         "page_count": page_count,
-        "extraction_method": method_summary,
-        "line_provenances": provenances,
-        "line_confidences": confidences,
+        "extraction_method": extracted.extraction_method,
+        "line_provenances": extracted.line_provenances,
+        "line_confidences": [
+            str(value) if value is not None else None for value in extracted.line_confidences
+        ],
+        "metadata_text": extracted.metadata_text,
     }
 
 

@@ -25,7 +25,7 @@ from pytesseract import Output
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_CANDIDATE_COUNT = 100
-PARSER_VERSION = "report-intake-parser-v3"
+PARSER_VERSION = "report-intake-parser-v4"
 MAX_REPORT_PAGES = 10
 MAX_PAGE_PIXELS = 8_000_000
 MAX_TOTAL_PDF_PIXELS = 40_000_000
@@ -54,6 +54,10 @@ class ReportIntakeTooLargeError(ReportIntakeUploadError):
 
 class ReportIntakeParserError(ValueError):
     """Raised when a supported file cannot be safely converted to candidates."""
+
+
+class NoCandidateObservationsError(ReportIntakeParserError):
+    """Only this failure may trigger the bounded PDF OCR fallback."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +90,7 @@ class ExtractedPDF:
     extraction_method: ExtractionMethod
     line_provenances: tuple[str, ...]
     line_confidences: tuple[Decimal | None, ...]
+    metadata_text: str | None = None
 
 
 def sanitize_filename(filename: str | None) -> str:
@@ -349,6 +354,7 @@ def parse_extracted_text(
     page_count: int,
     line_confidences: tuple[Decimal | None, ...] = (),
     line_provenances: tuple[str, ...] = (),
+    metadata_text: str | None = None,
 ) -> ParsedReportIntake:
     lines = [
         unicodedata.normalize("NFKC", line).strip()
@@ -361,7 +367,14 @@ def parse_extracted_text(
     source_name = source_name_from_filename(filename)
     reported_at: datetime | None = None
 
-    for line in lines:
+    # On fallback, original digital metadata wins. OCR supplies candidates only;
+    # absent dates remain absent and require the existing human review.
+    metadata_lines = (
+        lines
+        if metadata_text is None
+        else [unicodedata.normalize("NFKC", line).strip() for line in metadata_text.splitlines()]
+    )
+    for line in metadata_lines:
         source_match = _SOURCE_LINE_RE.match(line)
         if source_match:
             visible_source = sanitize_source_name(source_match.group("value"))
@@ -423,14 +436,14 @@ def parse_extracted_text(
             )
 
     if not observations:
-        raise ReportIntakeParserError("No candidate observations were found in the report.")
+        raise NoCandidateObservationsError("No candidate observations were found in the report.")
 
     return ParsedReportIntake(
         source_name=source_name,
         reported_at=reported_at,
         extraction_method=extraction_method,
         page_count=page_count,
-        extracted_character_count=len(text),
+        extracted_character_count=len(text) + (len(metadata_text) if metadata_text else 0),
         observations=tuple(observations),
     )
 
@@ -470,6 +483,9 @@ def _extract_pdf_text(file_bytes: bytes) -> ExtractedPDF:
         method = result["extraction_method"]
         if method not in {"digital_pdf", "ocr_pdf", "mixed_pdf"}:
             raise ValueError("invalid extraction method")
+        metadata_text = result.get("metadata_text")
+        if metadata_text is not None and not isinstance(metadata_text, str):
+            raise ValueError("invalid fallback metadata")
         return ExtractedPDF(
             text=result["text"],
             page_count=result["page_count"],
@@ -479,6 +495,7 @@ def _extract_pdf_text(file_bytes: bytes) -> ExtractedPDF:
                 Decimal(value) if value is not None else None
                 for value in result["line_confidences"]
             ),
+            metadata_text=metadata_text,
         )
     except ReportIntakeParserError:
         raise
@@ -585,6 +602,7 @@ def extract_and_parse(
             page_count=extracted.page_count,
             line_provenances=extracted.line_provenances,
             line_confidences=extracted.line_confidences,
+            metadata_text=extracted.metadata_text,
         )
 
     text, line_confidences = _extract_image_text(file_bytes)

@@ -1,4 +1,4 @@
-"""A synthetic diagnostic of the existing same-page text/image limitation."""
+"""Partially recognized documents remain outside zero-candidate fallback scope."""
 
 import os
 from io import BytesIO
@@ -12,15 +12,16 @@ from test_health_report_intakes import _pdf_bytes
 from test_report_pdf_ocr import _scanned_pdf
 
 
-def test_synthetic_text_heading_and_chinese_scan_on_one_page_are_not_ocr_mixed(monkeypatch):
+def test_partially_recognized_document_does_not_supplement_the_hidden_image(monkeypatch):
     writer = PdfWriter()
     writer.append(BytesIO(_pdf_bytes(["Synthetic digital report heading"])))
     scan = PdfReader(BytesIO(_scanned_pdf(["血糖: 92 mg/dL (65-99)"])))
     writer.pages[0].merge_page(scan.pages[0])
+    writer.append(BytesIO(_pdf_bytes(["Glucose: 95 mg/dL"])))
     output = BytesIO()
     writer.write(output)
     content = output.getvalue()
-    assert len(PdfReader(BytesIO(content)).pages) == 1
+    assert len(PdfReader(BytesIO(content)).pages) == 2
     if target := os.environ.get("HEALTHY_SYNTHETIC_PDF_DIAGNOSTIC_OUT"):
         Path(target).write_bytes(content)
 
@@ -32,10 +33,11 @@ def test_synthetic_text_heading_and_chinese_scan_on_one_page_are_not_ocr_mixed(m
     assert extracted["extraction_method"] == "digital_pdf"
     assert "Synthetic digital report heading" in extracted["text"]
     assert "92" not in extracted["text"]
-    with pytest.raises(parser.ReportIntakeParserError, match="No candidate observations"):
-        parser.parse_extracted_text(
-            text=extracted["text"],
-            filename="synthetic-mixed-page.pdf",
-            extraction_method="digital_pdf",
-            page_count=1,
-        )
+    parsed = parser.parse_extracted_text(
+        text=extracted["text"],
+        filename="synthetic-mixed-page.pdf",
+        extraction_method="digital_pdf",
+        page_count=2,
+    )
+    assert len(parsed.observations) == 1
+    assert parsed.observations[0].value_numeric == 95

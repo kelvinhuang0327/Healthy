@@ -3,8 +3,9 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 for (const scenario of [
   { variable: "HEALTHY_TEST_SCANNED_PDF_PATH", label: "Scanned PDF OCR" },
   { variable: "HEALTHY_TEST_MIXED_PDF_PATH", label: "Digital text + scanned PDF OCR" },
+  { variable: "HEALTHY_TEST_FALLBACK_PDF_PATH", label: "Digital text + scanned PDF OCR" },
 ]) {
-  test(`real ${scenario.label} requires correction and persists confirmation on mobile`, async ({ page }) => {
+  test(`real ${scenario.label} (${scenario.variable}) requires correction and persists confirmation on mobile`, async ({ page }) => {
     test.setTimeout(60_000);
     const fixture = process.env[scenario.variable];
     test.skip(!fixture, `Provide ${scenario.variable} with a synthetic raster PDF and local OCR tools`);
@@ -18,6 +19,14 @@ for (const scenario of [
     await expect(page.getByTestId("report-review-section")).toContainText(scenario.label);
     await expect(page.getByTestId("report-review-warning")).toContainText("may omit results");
     await expect(page.getByTestId("report-review-section")).toContainText("ocr_pdf:page-");
+    if (scenario.variable === "HEALTHY_TEST_FALLBACK_PDF_PATH") {
+      await expect(page.getByTestId("report-reported-at")).toHaveValue("");
+      await page.getByTestId("report-review-confirm").click();
+      await expect(page.getByTestId("report-intake-error")).toContainText("date");
+      await expect(page.getByTestId("confirmed-health-report")).toHaveCount(0);
+      await page.getByTestId("report-source-name").fill("Synthetic Reviewed Fallback Lab");
+      await page.getByTestId("report-reported-at").fill("2026-10-01");
+    }
     const firstValue = page.getByTestId("report-candidate-value").first();
     await firstValue.fill("93.25");
     await page.getByTestId("report-review-save").click();
@@ -28,6 +37,11 @@ for (const scenario of [
     await expect(page.getByTestId("confirmed-health-report")).toContainText("93.25");
     await page.reload();
     await expect(page.getByTestId("confirmed-health-report")).toContainText("93.25");
+    if (scenario.variable === "HEALTHY_TEST_FALLBACK_PDF_PATH") {
+      await expect(page.getByTestId("confirmed-health-report")).toContainText("Synthetic Reviewed Fallback Lab");
+      await page.getByTestId("confirmed-report-history-link").click();
+      await expect(page.getByTestId("history-item").filter({ hasText: "Synthetic Reviewed Fallback Lab" })).toContainText("93.25");
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 }

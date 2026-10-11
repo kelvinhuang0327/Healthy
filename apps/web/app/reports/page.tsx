@@ -69,6 +69,23 @@ function emptyObservation(): ReviewObservation {
   };
 }
 
+function repeatedMeasurementNotices(observations: ReviewObservation[]): string[] {
+  const groups = new Map<string, ReviewObservation[]>();
+  for (const observation of observations) {
+    const code = observation.code.trim().toUpperCase();
+    if (code) groups.set(code, [...(groups.get(code) ?? []), observation]);
+  }
+  return [...groups.entries()].filter(([, rows]) => rows.length > 1).map(([code, rows]) => {
+    const signatures = new Set(rows.map((row) => JSON.stringify([
+      row.value_numeric.trim() ? Number(row.value_numeric) : null,
+      row.value_text.trim(), row.unit.trim(), row.observed_at, row.reference_range.trim(),
+    ])));
+    return signatures.size > 1
+      ? `${code} has differing values, units, dates, or reference ranges. These may be separate measurements or conflicting extraction. All rows are retained; compare their source page and line before confirming.`
+      : `${code} appears ${rows.length} times. Repeated measurements may be valid. All rows are retained; check each source before confirming.`;
+  });
+}
+
 function toApiObservation(
   observation: ReviewObservation,
 ): ReportIntakeObservationEdit {
@@ -131,6 +148,7 @@ export default function ReportsPage() {
   const [sourceName, setSourceName] = useState("");
   const [reportedAt, setReportedAt] = useState("");
   const [observations, setObservations] = useState<ReviewObservation[]>([]);
+  const repeatedNotices = useMemo(() => repeatedMeasurementNotices(observations), [observations]);
   const [authLoading, setAuthLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -772,8 +790,14 @@ export default function ReportsPage() {
                 Extraction is a draft and may omit results. Compare every page
                 with the source document; only recognized numeric lab labels are
                 accepted from OCR. Correct every candidate before saving and confirming. No report is added
-                to Health History until you confirm it.
+                to Health History until you confirm it. Image results may still be
+                omitted when the same page also contains recognized text results.
               </p>
+              {repeatedNotices.length > 0 ? (
+                <ul className="review-warning" data-testid="report-repeat-warning">
+                  {repeatedNotices.map((notice) => <li key={notice}>{notice}</li>)}
+                </ul>
+              ) : null}
               <form onSubmit={saveReview} data-testid="report-review-form">
                 <div className="report-review-meta">
                   <label>

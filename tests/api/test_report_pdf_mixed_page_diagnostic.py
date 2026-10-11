@@ -1,18 +1,17 @@
-"""Partially recognized documents remain outside zero-candidate fallback scope."""
+"""Synthetic reproducer for a text-bearing image page beside digital results."""
 
 import os
 from io import BytesIO
 from pathlib import Path
 
-import pytest
-from healthy.domain import report_intakes as parser
 from healthy.domain import report_pdf_worker as worker
 from pypdf import PdfReader, PdfWriter
 from test_health_report_intakes import _pdf_bytes
+from test_report_pdf_fallback import extracted_payload
 from test_report_pdf_ocr import _scanned_pdf
 
 
-def test_partially_recognized_document_does_not_supplement_the_hidden_image(monkeypatch):
+def test_cross_page_supplement_recovers_the_hidden_image():
     writer = PdfWriter()
     writer.append(BytesIO(_pdf_bytes(["Synthetic digital report heading"])))
     scan = PdfReader(BytesIO(_scanned_pdf(["血糖: 92 mg/dL (65-99)"])))
@@ -25,19 +24,10 @@ def test_partially_recognized_document_does_not_supplement_the_hidden_image(monk
     if target := os.environ.get("HEALTHY_SYNTHETIC_PDF_DIAGNOSTIC_OUT"):
         Path(target).write_bytes(content)
 
-    def unexpected_ocr():
-        pytest.fail("Current worker must select digital extraction for this text-bearing page.")
-
-    monkeypatch.setattr(worker, "_require_pdf_ocr_tools", unexpected_ocr)
     extracted = worker.extract_pdf_pages(content)
-    assert extracted["extraction_method"] == "digital_pdf"
-    assert "Synthetic digital report heading" in extracted["text"]
-    assert "92" not in extracted["text"]
-    parsed = parser.parse_extracted_text(
-        text=extracted["text"],
-        filename="synthetic-mixed-page.pdf",
-        extraction_method="digital_pdf",
-        page_count=2,
-    )
-    assert len(parsed.observations) == 1
-    assert parsed.observations[0].value_numeric == 95
+    assert extracted["extraction_method"] == "mixed_pdf"
+    parsed = extracted_payload(extracted)
+    assert [o.value_numeric for o in parsed.observations] == [92, 95]
+    assert parsed.observations[0].parser_provenance.startswith("ocr_pdf:page-1:")
+    assert parsed.observations[0].parser_confidence >= 0.6
+    assert parsed.observations[1].parser_provenance == "digital_pdf:page-2:line-1"

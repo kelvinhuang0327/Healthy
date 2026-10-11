@@ -1,4 +1,53 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+
+test("cross-page supplemental measurements preserve repeats, conflict hints and confirmed History", async ({ page }, testInfo) => {
+  const fixture = process.env.HEALTHY_TEST_SUPPLEMENT_PDF_PATH;
+  test.skip(!fixture, "Provide the synthetic cross-page PDF and local OCR tools");
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await register(page, `supplement-${Date.now()}@example.com`, "Synthetic Cross Page Owner");
+  await page.getByTestId("person-card").first().click();
+  await page.getByTestId("reports-link").click();
+  await page.getByTestId("report-file-input").setInputFiles(fixture as string);
+  await page.getByTestId("report-upload-button").click();
+  await expect(page.getByTestId("report-candidate-row")).toHaveCount(2, { timeout: 35_000 });
+  const values = page.getByTestId("report-candidate-value");
+  await expect(values.nth(0)).toHaveValue("95");
+  await expect(values.nth(1)).toHaveValue("92");
+  await expect(page.getByTestId("report-repeat-warning")).toContainText("differing values");
+  await expect(page.getByTestId("report-repeat-warning")).toContainText("All rows are retained");
+  await expect(page.getByTestId("report-review-section")).toContainText("digital_pdf:page-1:line-3");
+  await expect(page.getByTestId("report-review-section")).toContainText("ocr_pdf:page-2:");
+  await page.screenshot({ path: testInfo.outputPath("mobile-supplement-review.png"), fullPage: true });
+  await values.nth(1).fill("95");
+  await expect(page.getByTestId("report-repeat-warning")).toContainText("appears 2 times");
+  await expect(page.getByTestId("report-candidate-row")).toHaveCount(2);
+  await values.nth(1).fill("93.25");
+  await page.getByTestId("report-review-save").click();
+  await expect(page.getByTestId("report-intake-message")).toContainText("saved");
+  await page.reload();
+  await expect(values.nth(0)).toHaveValue("95");
+  await expect(values.nth(1)).toHaveValue("93.25");
+  await expect(page.getByTestId("report-repeat-warning")).toContainText("differing values");
+  await page.getByTestId("report-review-confirm").click();
+  await expect(page.getByTestId("confirmed-health-report")).toContainText("95");
+  await expect(page.getByTestId("confirmed-health-report")).toContainText("93.25");
+  await page.getByTestId("confirmed-report-history-link").click();
+  const history = page.getByTestId("history-item").filter({ hasText: "Synthetic Cross Page Lab" });
+  await expect(history).toHaveCount(2);
+  await expect(history.filter({ hasText: "93.25" })).toHaveCount(1);
+  await expect(history.filter({ hasText: "95 mg/dL" })).toHaveCount(1);
+  await page.reload();
+  await expect(history).toHaveCount(2);
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("summary-export-link").click();
+  const download = await downloadPromise;
+  const summary = await readFile((await download.path())!, "utf8");
+  expect(summary).toContain("93.2500");
+  expect(summary).toContain("95.0000");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
 
 for (const scenario of [
   { variable: "HEALTHY_TEST_SCANNED_PDF_PATH", label: "Scanned PDF OCR" },

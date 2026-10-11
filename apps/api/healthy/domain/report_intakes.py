@@ -25,7 +25,7 @@ from pytesseract import Output
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_CANDIDATE_COUNT = 100
-PARSER_VERSION = "report-intake-parser-v4"
+PARSER_VERSION = "report-intake-parser-v5"
 MAX_REPORT_PAGES = 10
 MAX_PAGE_PIXELS = 8_000_000
 MAX_TOTAL_PDF_PIXELS = 40_000_000

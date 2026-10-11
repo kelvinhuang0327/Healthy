@@ -14,7 +14,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytesseract  # type: ignore[import-untyped]
-from pypdf import PdfReader
+from pypdf import PageObject, PdfReader
 
 from healthy.domain import report_intakes as reports
 
@@ -72,6 +72,36 @@ def _compose(pages: list[_PageText], metadata_text: str | None = None) -> report
         line_provenances=tuple(provenances),
         line_confidences=tuple(confidences),
         metadata_text=metadata_text,
+    )
+
+
+def _has_direct_raster_image(page: PageObject) -> bool:
+    # Inspect dictionaries only; PageObject.images would decode image streams
+    # before the existing bounded native rendering path.
+    resources = page.get("/Resources")
+    if resources is None:
+        return False
+    objects = resources.get_object().get("/XObject")
+    if objects is None:
+        return False
+    objects = objects.get_object()
+    if len(objects) > 256:
+        raise reports.ReportIntakeParserError(
+            "PDF image resources exceed the supplement inspection limit. "
+            "No partial candidates were saved; enter results manually."
+        )
+    return any(reference.get_object().get("/Subtype") == "/Image" for reference in objects.values())
+
+
+def _parse_pdf(extracted: reports.ExtractedPDF) -> reports.ParsedReportIntake:
+    return reports.parse_extracted_text(
+        text=extracted.text,
+        filename=None,
+        extraction_method=extracted.extraction_method,
+        page_count=extracted.page_count,
+        line_provenances=extracted.line_provenances,
+        line_confidences=extracted.line_confidences,
+        metadata_text=extracted.metadata_text,
     )
 
 
@@ -163,23 +193,40 @@ def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
                 pages.append(_PageText(page_index, text, "digital_pdf"))
         extracted = _compose(pages)
         try:
-            reports.parse_extracted_text(
-                text=extracted.text,
-                filename=None,
-                extraction_method=extracted.extraction_method,
-                page_count=page_count,
-                line_provenances=extracted.line_provenances,
-                line_confidences=extracted.line_confidences,
-            )
+            _parse_pdf(extracted)
         except reports.NoCandidateObservationsError:
             # Only a document-wide absence of candidates permits fallback.
-            # Never reset budgets or supplement an already parsed partial report.
             original_text = extracted.text
             pages = [
                 ocr_page(page.page_index, fallback=True) if page.method == "digital_pdf" else page
                 for page in pages
             ]
             extracted = _compose(pages, metadata_text=original_text)
+        else:
+            # Supplement only separately identifiable pages: digital text but
+            # zero candidates, with a direct raster image. Never OCR a page that
+            # already contains candidates; no cross-method deduplication is safe.
+            original_text = extracted.text
+            supplemented = False
+            for index, page in enumerate(pages):
+                if page.method != "digital_pdf":
+                    continue
+                try:
+                    _parse_pdf(_compose([page]))
+                except reports.NoCandidateObservationsError:
+                    if _has_direct_raster_image(reader.pages[page.page_index]):
+                        pages[index] = ocr_page(page.page_index, fallback=True)
+                        supplemented = True
+            if supplemented:
+                extracted = _compose(pages, metadata_text=original_text)
+        # Metadata and retained digital pages can overlap in a supplement.
+        # Bound the actual combined output as well as the shared processing budget.
+        if (
+            len(extracted.text) + len(extracted.metadata_text or "")
+            > reports.MAX_EXTRACTED_CHARACTERS
+        ):
+            raise reports.ReportIntakeParserError("The PDF contains too much extracted text.")
+        _parse_pdf(extracted)
     except reports.ReportIntakeParserError:
         raise
     except Exception as error:

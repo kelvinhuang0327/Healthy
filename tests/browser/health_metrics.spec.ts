@@ -132,6 +132,9 @@ test("selected Person can import health metrics from CSV, see provenance badges 
   await expect(summary).toBeVisible();
   await expect(summary).toContainText("2 imported");
   await expect(summary).toContainText("0 duplicate/existing");
+  await expect(page.getByTestId("today-latest-metric-source")).toHaveText(
+    "Source: Imported CSV",
+  );
 
   // 3. Metric cards display provenance
   const metricList = page.getByTestId("metric-list");
@@ -145,6 +148,9 @@ test("selected Person can import health metrics from CSV, see provenance badges 
   await manualForm.getByRole("button", { name: "Save metric" }).click();
   await expect(metricList.getByTestId("metric-card")).toHaveCount(3);
   await expect(metricList.getByTestId("metric-source-badge").first()).toHaveText("Manual");
+  await expect(page.getByTestId("today-latest-metric-source")).toHaveText(
+    "Source: Manual",
+  );
 
   // 5. Re-import same CSV -> 0 imported, 2 duplicate
   await page.getByTestId("metric-csv-text-input").fill(csvData);

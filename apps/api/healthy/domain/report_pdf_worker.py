@@ -15,6 +15,7 @@ from types import ModuleType
 
 import pytesseract  # type: ignore[import-untyped]
 from pypdf import PageObject, PdfReader
+from pypdf.generic import DictionaryObject, PdfObject
 
 from healthy.domain import report_intakes as reports
 
@@ -75,22 +76,58 @@ def _compose(pages: list[_PageText], metadata_text: str | None = None) -> report
     )
 
 
-def _has_direct_raster_image(page: PageObject) -> bool:
+def _has_raster_image(page: PageObject) -> bool:
     # Inspect dictionaries only; PageObject.images would decode image streams
-    # before the existing bounded native rendering path.
+    # before the existing bounded native rendering path. Forms may reference
+    # other Forms, so bound the whole graph and distinguish sharing from cycles.
     resources = page.get("/Resources")
     if resources is None:
         return False
-    objects = resources.get_object().get("/XObject")
-    if objects is None:
-        return False
-    objects = objects.get_object()
-    if len(objects) > 256:
-        raise reports.ReportIntakeParserError(
-            "PDF image resources exceed the supplement inspection limit. "
-            "No partial candidates were saved; enter results manually."
-        )
-    return any(reference.get_object().get("/Subtype") == "/Image" for reference in objects.values())
+    pending: list[tuple[PdfObject, int, tuple[int, ...]]] = [(resources, 0, ())]
+    visited: set[int] = set()
+    inspected = 0
+    while pending:
+        reference, depth, ancestors = pending.pop()
+        resolved = reference.get_object()
+        if not isinstance(resolved, DictionaryObject):
+            raise reports.ReportIntakeParserError("Invalid PDF image resources.")
+        identity = id(resolved)
+        if identity in ancestors:
+            raise reports.ReportIntakeParserError(
+                "Cyclic PDF Form resources cannot be inspected safely. "
+                "No partial candidates were saved; enter results manually."
+            )
+        if depth > 8:
+            raise reports.ReportIntakeParserError(
+                "PDF Form nesting exceeds the depth inspection limit. "
+                "No partial candidates were saved; enter results manually."
+            )
+        if identity in visited:
+            continue
+        visited.add(identity)
+        objects = resolved.get("/XObject")
+        if objects is None:
+            continue
+        objects = objects.get_object()
+        if not isinstance(objects, DictionaryObject):
+            raise reports.ReportIntakeParserError("Invalid PDF image resources.")
+        inspected += len(objects)
+        if inspected > 256:
+            raise reports.ReportIntakeParserError(
+                "PDF image resources exceed the supplement inspection limit. "
+                "No partial candidates were saved; enter results manually."
+            )
+        for entry in objects.values():
+            obj = entry.get_object()
+            if not isinstance(obj, DictionaryObject):
+                raise reports.ReportIntakeParserError("Invalid PDF image resources.")
+            if obj.get("/Subtype") == "/Image":
+                return True
+            if obj.get("/Subtype") == "/Form":
+                nested = obj.get("/Resources")
+                if nested is not None:
+                    pending.append((nested, depth + 1, (*ancestors, identity)))
+    return False
 
 
 def _parse_pdf(extracted: reports.ExtractedPDF) -> reports.ParsedReportIntake:
@@ -204,7 +241,7 @@ def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
             extracted = _compose(pages, metadata_text=original_text)
         else:
             # Supplement only separately identifiable pages: digital text but
-            # zero candidates, with a direct raster image. Never OCR a page that
+            # zero candidates, with a direct or Form-nested raster image. Never OCR a page that
             # already contains candidates; no cross-method deduplication is safe.
             original_text = extracted.text
             supplemented = False
@@ -214,7 +251,7 @@ def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
                 try:
                     _parse_pdf(_compose([page]))
                 except reports.NoCandidateObservationsError:
-                    if _has_direct_raster_image(reader.pages[page.page_index]):
+                    if _has_raster_image(reader.pages[page.page_index]):
                         pages[index] = ocr_page(page.page_index, fallback=True)
                         supplemented = True
             if supplemented:

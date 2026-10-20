@@ -169,7 +169,7 @@ def test_original_metadata_is_not_replaced_by_supplement(monkeypatch):
     assert all(o.observed_at == result.reported_at for o in result.observations)
 
 
-def test_pure_digital_cover_and_same_page_candidate_never_trigger_supplement(monkeypatch):
+def test_pure_digital_cover_never_triggers_supplement(monkeypatch):
     def unexpected():
         pytest.fail("Existing digital candidate pages must not be re-OCRed")
 
@@ -180,10 +180,6 @@ def test_pure_digital_cover_and_same_page_candidate_never_trigger_supplement(mon
     output = BytesIO()
     writer.write(output)
     result = extracted_payload(worker.extract_pdf_pages(output.getvalue()))
-    assert result.extraction_method == "digital_pdf"
-    assert [o.value_numeric for o in result.observations] == [95]
-    same_page = mixed_page(["Glucose: 95 mg/dL"], ["血糖: 92 mg/dL"])
-    result = extracted_payload(worker.extract_pdf_pages(same_page))
     assert result.extraction_method == "digital_pdf"
     assert [o.value_numeric for o in result.observations] == [95]
 

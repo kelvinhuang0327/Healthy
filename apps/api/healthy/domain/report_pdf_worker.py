@@ -49,6 +49,7 @@ class _PageText:
     text: str
     method: reports.ExtractionMethod
     confidences: tuple[Decimal | None, ...] = ()
+    image_region: bool = False
 
 
 def _compose(pages: list[_PageText], metadata_text: str | None = None) -> reports.ExtractedPDF:
@@ -59,7 +60,8 @@ def _compose(pages: list[_PageText], metadata_text: str | None = None) -> report
         page_lines = page.text.replace("\r\n", "\n").split("\n")
         lines.extend(page_lines)
         for index in range(len(page_lines)):
-            provenances.append(f"{page.method}:page-{page.page_index + 1}:line-{index + 1}")
+            region = ":image-region" if page.image_region else ""
+            provenances.append(f"{page.method}:page-{page.page_index + 1}{region}:line-{index + 1}")
             confidences.append(page.confidences[index] if index < len(page.confidences) else None)
     method = (
         pages[0].method
@@ -68,7 +70,7 @@ def _compose(pages: list[_PageText], metadata_text: str | None = None) -> report
     )
     return reports.ExtractedPDF(
         text="\n".join(lines),
-        page_count=len(pages),
+        page_count=len({page.page_index for page in pages}),
         extraction_method=method,
         line_provenances=tuple(provenances),
         line_confidences=tuple(confidences),
@@ -169,10 +171,12 @@ def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
         if characters > reports.MAX_EXTRACTED_CHARACTERS:
             raise reports.ReportIntakeParserError("The PDF contains too much extracted text.")
 
-    def ocr_page(page_index: int, *, fallback: bool = False) -> _PageText:
+    def ocr_page(
+        page_index: int, *, fallback: bool = False, image_region: bool = False
+    ) -> _PageText:
         nonlocal document, total_pixels
+        tools = _require_pdf_ocr_tools()
         if document is None:
-            tools = _require_pdf_ocr_tools()
             document = tools.PdfDocument(file_bytes)
         page = document[page_index]
         bitmap = None
@@ -192,7 +196,52 @@ def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
                 raise reports.ReportIntakeParserError(
                     "The PDF exceeds the 40 million pixel total OCR limit."
                 )
-            bitmap = page.render(scale=scale)
+            crop = (0.0, 0.0, 0.0, 0.0)
+            if image_region:
+                # Read only a separable image area, never the digital candidates
+                # again. A searchable scan or ambiguous layout must be reviewed
+                # manually rather than deduplicated by code/value.
+                failure = (
+                    f"PDF page {page_index + 1} image region cannot be separated safely "
+                    "from digital text. No partial candidates were saved; enter results manually."
+                )
+                if page.get_rotation() != 0 or page.get_bbox() != (0.0, 0.0, width, height):
+                    raise reports.ReportIntakeParserError(failure)
+                images: list[tuple[float, float, float, float]] = []
+                texts: list[tuple[float, float, float, float]] = []
+                for index, obj in enumerate(page.get_objects(max_depth=1)):
+                    if index >= 256 or obj.type == tools.raw.FPDF_PAGEOBJ_FORM:
+                        raise reports.ReportIntakeParserError(failure)
+                    if obj.type not in (tools.raw.FPDF_PAGEOBJ_IMAGE, tools.raw.FPDF_PAGEOBJ_TEXT):
+                        continue
+                    left, bottom, right, top = obj.get_bounds()
+                    if not all(math.isfinite(v) for v in (left, bottom, right, top)):
+                        raise reports.ReportIntakeParserError(failure)
+                    bounds = (max(0.0, left), max(0.0, bottom), min(width, right), min(height, top))
+                    if bounds[0] >= bounds[2] or bounds[1] >= bounds[3]:
+                        continue
+                    if obj.type == tools.raw.FPDF_PAGEOBJ_IMAGE:
+                        images.append(bounds)
+                    else:
+                        texts.append(bounds)
+                if not images:
+                    raise reports.ReportIntakeParserError(failure)
+                left = min(b[0] for b in images)
+                bottom = min(b[1] for b in images)
+                right = max(b[2] for b in images)
+                top = max(b[3] for b in images)
+                # Include a two-pixel guard for render rounding/antialiasing.
+                guard = 2 / scale
+                if any(
+                    b[0] < right + guard
+                    and b[2] > left - guard
+                    and b[1] < top + guard
+                    and b[3] > bottom - guard
+                    for b in texts
+                ):
+                    raise reports.ReportIntakeParserError(failure)
+                crop = (left, bottom, width - right, height - top)
+            bitmap = page.render(scale=scale, crop=crop)
             image = bitmap.to_pil()
             if image.width * image.height > reports.MAX_PAGE_PIXELS:
                 raise reports.ReportIntakeParserError("The rendered PDF page is too large.")
@@ -218,7 +267,7 @@ def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
                 f"{label} page {page_index + 1} could not be parsed reliably. "
                 "No partial candidates were saved; enter results manually."
             ) from error
-        return _PageText(page_index, text, "ocr_pdf", confidence)
+        return _PageText(page_index, text, "ocr_pdf", confidence, image_region)
 
     try:
         for page_index, pdf_page in enumerate(reader.pages):
@@ -240,22 +289,27 @@ def extract_pdf_pages(file_bytes: bytes) -> dict[str, object]:
             ]
             extracted = _compose(pages, metadata_text=original_text)
         else:
-            # Supplement only separately identifiable pages: digital text but
-            # zero candidates, with a direct or Form-nested raster image. Never OCR a page that
-            # already contains candidates; no cross-method deduplication is safe.
+            # Zero-candidate image pages use whole-page OCR; candidate-bearing
+            # pages retain their digital rows and supplement only disjoint images.
             original_text = extracted.text
             supplemented = False
-            for index, page in enumerate(pages):
+            supplemented_pages: list[_PageText] = []
+            for page in pages:
+                supplemented_pages.append(page)
                 if page.method != "digital_pdf":
                     continue
                 try:
                     _parse_pdf(_compose([page]))
                 except reports.NoCandidateObservationsError:
                     if _has_raster_image(reader.pages[page.page_index]):
-                        pages[index] = ocr_page(page.page_index, fallback=True)
+                        supplemented_pages[-1] = ocr_page(page.page_index, fallback=True)
+                        supplemented = True
+                else:
+                    if _has_raster_image(reader.pages[page.page_index]):
+                        supplemented_pages.append(ocr_page(page.page_index, image_region=True))
                         supplemented = True
             if supplemented:
-                extracted = _compose(pages, metadata_text=original_text)
+                extracted = _compose(supplemented_pages, metadata_text=original_text)
         # Metadata and retained digital pages can overlap in a supplement.
         # Bound the actual combined output as well as the shared processing budget.
         if (

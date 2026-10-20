@@ -18,6 +18,10 @@ jobs:
     name: verify
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CIRCLE_NODE_TOTAL: "2"
+      OMP_THREAD_LIMIT: "1"
+      RAYON_NUM_THREADS: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -34,10 +38,18 @@ jobs:
           node-version: "24.18.0"
 
       - name: Install Tesseract OCR
-        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-tra fonts-noto-cjk
+          healthy_model_file=$(dpkg -L tesseract-ocr-chi-tra | sed -n '/\/chi_tra\.traineddata$/p')
+          test -f "$healthy_model_file"
+          printf 'HEALTHY_OCR_TESSDATA_DIR=%s\n' "$(dirname "$healthy_model_file")" >> "$GITHUB_ENV"
+          tesseract --list-langs
 
       - name: Install dependencies
-        run: make install
+        run: |
+          make install
+          uv sync --all-groups --extra report-ocr --frozen
 
       - name: Install Playwright OS dependencies
         run: npx playwright install-deps chromium

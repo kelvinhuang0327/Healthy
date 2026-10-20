@@ -28,7 +28,8 @@ def scanned_pdf() -> bytes:
         pytest.skip("Real Chinese OCR test requires the chi_tra model")
     return _scanned_pdf(
         [
-            "Source: Synthetic Local OCR Lab",
+            # Separate the acronym clearly with either supported CJK font.
+            "Source: Synthetic Local   OCR Lab",
             "Report Date: 2026-10-01",
             "血糖: 92 mg/dL (65-99)",
             "糖化血紅素: 5.8 %",

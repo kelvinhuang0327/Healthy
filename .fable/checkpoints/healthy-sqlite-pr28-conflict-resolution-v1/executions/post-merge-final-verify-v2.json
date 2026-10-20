@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "task_id": "healthy-sqlite-pr28-conflict-resolution-v1",
+  "execution_id": "post-merge-final-verify-v2",
+  "pid": 41152,
+  "status": "COMPLETED",
+  "durable_capture_path": "/Users/kelvin/VibeCoding-WorkSpace/Healthy/.fable/checkpoints/healthy-sqlite-pr28-conflict-resolution-v1/captures/post-merge-final-verify-v2.json",
+  "started_at": "2026-09-10T11:52:32Z",
+  "ended_at": "2026-09-10T11:52:35Z"
+}

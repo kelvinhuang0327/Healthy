@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "command": [
+    "/bin/sh",
+    "-c",
+    "set -eu; PR_JSON=$(gh pr view 28 --repo kelvinhuang0327/Healthy --json state,mergedAt,mergeCommit,headRefName,headRefOid,baseRefName,url); MERGE_SHA=$(printf \"%s\" \"$PR_JSON\" | jq -r .mergeCommit.oid); test \"$MERGE_SHA\" = 863d56b4428aaf3ffad6d24635f3edaec5d4269f; test \"$(git rev-parse origin/main)\" = \"$MERGE_SHA\"; git merge-base --is-ancestor 07e65957263b7754f29f095e3ef79a6e006b8d7f origin/main; CHECKS=$(gh api \"repos/kelvinhuang0327/Healthy/commits/$MERGE_SHA/check-runs\"); test \"$(printf \"%s\" \"$CHECKS\" | jq -r \".check_runs[] | select(.name == \\\"verify\\\") | .conclusion\")\" = success; REMOTE_FEATURE=$(git ls-remote origin refs/heads/codex/healthy-sqlite-persistence-v1 | cut -f1); test \"$REMOTE_FEATURE\" = 07e65957263b7754f29f095e3ef79a6e006b8d7f; printf \"%s\\n\" \"PR_STATE=MERGED\" \"MERGE_SHA=$MERGE_SHA\" \"ORIGIN_MAIN=$MERGE_SHA\" \"FEATURE_REMOTE=$REMOTE_FEATURE\" \"POST_MERGE_VERIFY=PASS\""
+  ],
+  "stdout": "PR_STATE=MERGED\nMERGE_SHA=863d56b4428aaf3ffad6d24635f3edaec5d4269f\nORIGIN_MAIN=863d56b4428aaf3ffad6d24635f3edaec5d4269f\nFEATURE_REMOTE=07e65957263b7754f29f095e3ef79a6e006b8d7f\nPOST_MERGE_VERIFY=PASS\n",
+  "stderr": "",
+  "exit_status": 0,
+  "started_at": "2026-09-10T11:52:32Z",
+  "ended_at": "2026-09-10T11:52:35Z"
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "command": [
+    "/usr/bin/env",
+    "HEALTHY_DATABASE_URL=sqlite+pysqlite:////tmp/healthy-today-symptom-duration-context-v1.sqlite",
+    "PLAYWRIGHT_BROWSERS_PATH=.playwright",
+    "npm",
+    "run",
+    "test:browser",
+    "--",
+    "tests/browser/health_assistant_today.spec.ts"
+  ],
+  "stdout": "\n> healthy@0.1.0 test:browser\n> playwright test --config tests/browser/playwright.config.ts tests/browser/health_assistant_today.spec.ts\n\n\n\n\n\nRunning 4 tests using 1 worker\n\n[1/4] tests/browser/health_assistant_today.spec.ts:55:5 › unified Today view aggregates records and shows evidence-linked guidance\n[2/4] tests/browser/health_assistant_today.spec.ts:349:5 › Today recommendation acceptance is explicit, idempotent, and reload-safe\n[3/4] tests/browser/health_assistant_today.spec.ts:402:5 › configured daily reminder is due, acknowledged, and reload-safe\n[4/4] tests/browser/health_assistant_today.spec.ts:449:5 › generic email reminder preference is explicit and reload-safe\n  4 passed (15.2s)\n",
+  "stderr": "[WebServer] INFO:     Started server process [23233]\n[WebServer] INFO:     Waiting for application startup.\n[WebServer] INFO:     Application startup complete.\n[WebServer] INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)\n[WebServer] (node:23321) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.\n[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)\n",
+  "exit_status": 0,
+  "started_at": "2026-10-01T13:32:58Z",
+  "ended_at": "2026-10-01T13:33:15Z"
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "command": [
+    "env",
+    "TZ=UTC",
+    "HEALTHY_ENV=test",
+    "HEALTHY_DATABASE_URL=sqlite+pysqlite://///tmp/healthy-pr28-integration-PS8Pgh/healthy.db",
+    "HEALTHY_COOKIE_SECURE=false",
+    "HEALTHY_ALLOWED_ORIGINS=http://127.0.0.1:3000",
+    ".venv/bin/pytest",
+    "-q",
+    "tests/api/test_sqlite_persistence.py",
+    "tests/api/test_external_imports.py",
+    "tests/api/test_external_metric_csv_import.py",
+    "tests/api/test_notification_delivery.py",
+    "tests/api/test_contract_and_config.py",
+    "tests/api/test_health_reports.py"
+  ],
+  "stdout": "................................................................         [100%]\n=============================== warnings summary ===============================\n.venv/lib/python3.14/site-packages/fastapi/testclient.py:1\n  /Users/kelvin/VibeCoding-WorkSpace/Healthy/.venv/lib/python3.14/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\ntests/api/test_sqlite_persistence.py::test_default_database_url_is_absolute_persistent_sqlite\ntests/api/test_sqlite_persistence.py::test_fresh_sqlite_database_upgrades_to_head\n  /Users/kelvin/VibeCoding-WorkSpace/Healthy/.venv/lib/python3.14/site-packages/alembic/config.py:612: DeprecationWarning: No path_separator found in configuration; falling back to legacy splitting on spaces, commas, and colons for prepend_sys_path.  Consider adding path_separator=os to Alembic config.\n    util.warn_deprecated(\n\ntests/api/test_health_reports.py::test_schema_validation_rejections\n  /Users/kelvin/VibeCoding-WorkSpace/Healthy/.venv/lib/python3.14/site-packages/anyio/_backends/_asyncio.py:1033: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.\n    result = context.run(func, *args)\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n",
+  "stderr": "",
+  "exit_status": 0,
+  "started_at": "2026-09-10T10:08:15Z",
+  "ended_at": "2026-09-10T10:08:21Z"
+}

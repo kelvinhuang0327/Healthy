@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "command": [
+    "/bin/sh",
+    "-c",
+    "set -eu; test \"$(git rev-parse HEAD)\" = d961e4ff4f559ba94796d9482ac26cf6877208cc; test \"$(git rev-parse HEAD^{tree})\" = f10d258f76e5d01b1ca4f19f752a5b056f8660ab; test \"$(git status --porcelain --untracked-files=no)\" = \"\"; test \"$(git rev-parse HEAD:apps/web/next-env.d.ts)\" = \"$(git rev-parse HEAD^1:apps/web/next-env.d.ts)\"; test \"$(git show -s --format=%s HEAD)\" = \"Resolve SQLite persistence integration conflict\"; printf \"%s\\n\" \"FINAL_HEAD=$(git rev-parse HEAD)\" \"FINAL_TREE=$(git rev-parse HEAD^{tree})\" \"TRACKED_WORKTREE_CLEAN=YES\" \"NEXT_ENV_MATCHES_FIRST_PARENT=YES\" \"FULL_SUITE_EXECUTION_ID=make-test-final-v4\" \"FULL_SUITE_EXECUTION_ENDED_AT=2026-09-10T10:12:30Z\" \"COMMIT_CREATED_AT=2026-09-10T10:13:00Z\" \"FULL_SUITE_OUTPUT=270 passed, 3 skipped, OpenAPI/web/browser gates passed\""
+  ],
+  "stdout": "FINAL_HEAD=d961e4ff4f559ba94796d9482ac26cf6877208cc\nFINAL_TREE=f10d258f76e5d01b1ca4f19f752a5b056f8660ab\nTRACKED_WORKTREE_CLEAN=YES\nNEXT_ENV_MATCHES_FIRST_PARENT=YES\nFULL_SUITE_EXECUTION_ID=make-test-final-v4\nFULL_SUITE_EXECUTION_ENDED_AT=2026-09-10T10:12:30Z\nCOMMIT_CREATED_AT=2026-09-10T10:13:00Z\nFULL_SUITE_OUTPUT=270 passed, 3 skipped, OpenAPI/web/browser gates passed\n",
+  "stderr": "",
+  "exit_status": 0,
+  "started_at": "2026-09-10T11:29:35Z",
+  "ended_at": "2026-09-10T11:29:35Z"
+}

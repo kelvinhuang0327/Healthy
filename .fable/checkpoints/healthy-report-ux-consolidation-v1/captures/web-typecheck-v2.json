@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "command": [
+    "make",
+    "web-typecheck"
+  ],
+  "stdout": "npm_config_cache=/Users/kelvin/VibeCoding-WorkSpace/Healthy/.npm-cache npm run web:typecheck\n\n> healthy@0.1.0 web:typecheck\n> npm run typecheck --workspace @healthy/web\n\n\n> @healthy/web@0.1.0 typecheck\n> tsc --noEmit\n\n",
+  "stderr": "",
+  "exit_status": 0,
+  "started_at": "2026-09-11T04:12:41Z",
+  "ended_at": "2026-09-11T04:12:42Z"
+}

@@ -1,0 +1,149 @@
+TASK_ID: healthy-sqlite-pr28-conflict-resolution-v1
+LEDGER_STATUS: COMPLETE_WITH_EXPLICIT_UNKNOWN_BASELINE_ITEMS
+
+CANONICAL_REPOSITORY: /Users/kelvin/VibeCoding-WorkSpace/Healthy
+INITIAL_BRANCH: codex/healthy-sqlite-persistence-v1
+INITIAL_HEAD: 362006b7f653fc316882a0eb6ec02d64713fb430
+MERGED_AUTHORITY: origin/main at 5a35c3cf7c549bc8c42c9952f2e8ef8085c0c2a3
+INTEGRATION_COMMIT: d961e4ff4f559ba94796d9482ac26cf6877208cc
+FINAL_HEAD: 07e65957263b7754f29f095e3ef79a6e006b8d7f
+FINAL_TREE: 89e71d0427769466a1f1989b2c3e2ef8fd32f2c7
+
+AUTHORIZATION:
+- Owner supplied AUTHORIZE_HEALTHY_SQLITE_PR28_CONFLICT_RESOLUTION_V1.
+- The displayed backslashes escaped Markdown underscores; the rendered token matched exactly.
+
+FILES_WRITTEN_DURING_TASK:
+
+1. Repository content written through conflict resolution and committed in FINAL_HEAD [Confirmed]:
+   apps/api/healthy/application/external_imports.py
+   apps/api/healthy/application/legacy_metric_export.py
+   apps/api/healthy/application/notification_delivery.py
+   apps/api/healthy/application/services.py
+   apps/api/healthy/domain/external_imports.py
+   apps/api/healthy/domain/metrics.py
+   apps/api/healthy/domain/notifications.py
+   apps/api/healthy/infrastructure/config.py
+   apps/api/healthy/infrastructure/email.py
+   apps/api/healthy/infrastructure/models.py
+   apps/api/healthy/infrastructure/repositories.py
+   apps/api/healthy/presentation/api.py
+   apps/api/healthy/presentation/schemas.py
+   apps/web/app/globals.css
+   apps/web/app/page.tsx
+   apps/web/lib/api.ts
+   contracts/openapi/healthy-v1.yaml
+   migrations/versions/20260812_0013_notification_deliveries.py
+   migrations/versions/20260818_0014_external_metric_csv_import.py
+   migrations/versions/20260820_0015_blood_glucose_precision.py
+   migrations/versions/20260910_0016_sqlite_metric_import_identity.py
+   scripts/export_legacy_health_metrics.py
+   scripts/process_notification_deliveries.py
+   tests/api/test_blood_glucose_precision_migration.py
+   tests/api/test_contract_and_config.py
+   tests/api/test_external_metric_csv_import.py
+   tests/api/test_health_metrics.py
+   tests/api/test_health_reports.py
+   tests/api/test_legacy_metric_bridge_rehearsal.py
+   tests/api/test_legacy_metric_export.py
+   tests/api/test_notification_delivery.py
+   tests/api/test_sqlite_persistence.py
+   tests/browser/health_assistant_today.spec.ts
+   tests/browser/health_metrics.spec.ts
+   tests/browser/identity.spec.ts
+   tests/browser/playwright.config.ts
+
+2. Repository content deleted as part of the authorized migration-graph resolution [Confirmed]:
+   migrations/versions/20260827_0013_health_metric_import_identity.py
+
+3. Durable Fable execution evidence created and retained outside the committed tree [Confirmed]:
+   .fable/checkpoints/healthy-sqlite-pr28-conflict-resolution-v1/
+   - 22 capture JSON files and 22 execution JSON files, 44 files total.
+   - Evidence includes migration-cycle attempts v1-v6, focused/regression attempts,
+     full-gate attempts, and the integration commit record.
+   - worker-handoff-ledger.txt is this ledger and is retained as task evidence.
+
+4. Runtime/test outputs [Confirmed where listed; baseline provenance of ignored directories is
+   explicitly not reconstructed]:
+   - /tmp/healthy-pr28-integration-PS8Pgh/healthy.db was created/recreated by the
+     isolated migration/test commands and is retained at end (245760 bytes at final check).
+   - /tmp/healthy-pr28-integration-PS8Pgh/ is retained as the isolated test directory.
+   - Standard ignored runtime paths were read or written by the commands: .mypy_cache/,
+     .npm-cache/, .playwright/, .pytest_cache/, .ruff_cache/, .venv/, node_modules/,
+     apps/api/**/__pycache__/, apps/web/.next/, apps/web/tsconfig.tsbuildinfo,
+     migrations/**/__pycache__/, scripts/__pycache__/, test-results/, and tests/api/__pycache__/.
+   - These paths are ignored/non-product runtime state. Their exact pre-task baseline was not
+     captured, so they are not falsely classified as newly created; they are retained standard
+     workspace/runtime outputs.
+
+5. Git/harness metadata [Confirmed]: normal local index, reflog, MERGE_HEAD/FETCH_HEAD and
+   Fable checkpoint metadata changed during the authorized merge/checkpoint workflow. No remote
+   write was attempted before this handoff. No additional worktree was created by this task.
+
+FILES_DELETED_BEFORE_END:
+- The stale feature migration listed above was deleted and its deletion is committed [Confirmed].
+- The isolated SQLite file was removed and recreated by each migration-cycle/db-reset attempt;
+  the final instance is retained [Confirmed].
+- Next build temporarily changed tracked apps/web/next-env.d.ts to import .next/types/routes.d.ts;
+  that generated variant was restored before commit to the parent/final .next/dev/types content
+  and has no final diff [Confirmed].
+- Pytest/Playwright temporary files under the system temp directory were created and cleaned by
+  the test harness [Inferred from standard runner behavior; exact transient names not retained].
+
+PRE_EXISTING_OR_UNCHANGED:
+- .healthy-test.db was identified before execution as a pre-existing approximately 838 MB file;
+  it was not targeted or overwritten. All test database work used the /tmp path above [Confirmed].
+- The configured Python/Node dependencies and normal ignored caches were not treated as product
+  changes. Where an exact pre-task baseline was unavailable, the ledger says so explicitly.
+
+FILES_RETAINED_AT_END:
+- 122 tracked files in FINAL_TREE, represented by FINAL_HEAD.
+- 71 untracked task evidence files under .fable/ after publication and lifecycle closure
+  (70 execution/capture records plus this ledger); no untracked source/test/product files.
+- The isolated /tmp healthy.db test database and standard ignored runtime outputs listed above.
+
+DELTA_REMEDIATION:
+- Fresh Judge finding: a precision-loss downgrade from 0016 toward 0014 removed 0016 identity
+  constraints before 0015 raised. This was repaired by preflighting precision loss in 0016 before
+  dropping constraints whenever the downgrade target is below 0015.
+- Added SQLite regression test test_sqlite_precision_loss_downgrade_preserves_head_schema.
+- Repair commit: 07e65957263b7754f29f095e3ef79a6e006b8d7f,
+  subject Preserve SQLite migration state on precision-loss downgrade.
+
+FINAL_TREE_BINDING:
+- Final repaired make-test execution record:
+  .fable/.../executions/make-test-remediation-v2.json.
+- It ran env PATH=Node24.18.0 SQLITE_DATABASE_PATH=/tmp/healthy-pr28-integration-PS8Pgh/healthy.db make test.
+- Execution ended at 2026-09-10T11:36:57Z (19:36:57 +0800), status COMPLETED; its capture
+  contains the successful output: 271 passed, 3 skipped, OpenAPI matched, web checks/build passed,
+  and 15 browser tests passed.
+- The repair commit was created at 2026-09-10T11:37:19Z (19:37:19 +0800), immediately after
+  the repaired suite. No product/test edits occurred between that suite and commit. The only
+  tracked generated difference observed after the suite was apps/web/next-env.d.ts, and it was
+  restored to the exact parent/final content before commit.
+- Protected final-tree binding v2 verifies FINAL_HEAD 07e6595, FINAL_TREE 89e71d0, tracked
+  worktree cleanliness, parent-equivalent next-env metadata, and the suite/commit chronology.
+- Final post-commit status is clean for tracked files; only .fable/ is untracked.
+
+EXTERNAL_MUTATION_LEDGER:
+- GitHub PR push: endpoint origin/codex/healthy-sqlite-persistence-v1, normal push, fixed head
+  07e65957263b7754f29f095e3ef79a6e006b8d7f, applied successfully, read-after-write confirmed
+  PR head 07e6595 and exact-head CI run 34473020790 success, retry not needed.
+- GitHub PR merge: PR #28, normal merge with --match-head-commit 07e6595, applied successfully,
+  read-after-write confirmed PR state MERGED and merge commit 863d56b4428aaf3ffad6d24635f3edaec5d4269f.
+- Post-merge CI: workflow run 34473290520 on merge commit 863d56b, verify success; read-after-write
+  confirmed exact merge SHA and successful check.
+- Remote branch deletion: endpoint origin/codex/healthy-sqlite-persistence-v1, normal delete,
+  applied successfully; read-after-write git ls-remote returned no ref.
+- Local branch deletion: normal git branch -d after fast-forwarding main to 863d56b, applied
+  successfully; read-after-write local branch list contains no feature branch.
+
+LIFECYCLE_CLOSURE:
+- PR #28: MERGED at 2026-09-10T11:48:56Z with merge commit 863d56b4428aaf3ffad6d24635f3edaec5d4269f.
+- origin/main and local main: 863d56b4428aaf3ffad6d24635f3edaec5d4269f.
+- Feature commit 07e6595 is an ancestor of main.
+- Exact-head CI 34473020790 and post-merge CI 34473290520 both passed.
+- Remote and local feature branches deleted after verification.
+- Current tracked worktree is clean; .fable/ evidence is intentionally retained.
+- CURRENT_BRANCH: main
+- FULL_PR_LIFECYCLE_CLOSED: YES

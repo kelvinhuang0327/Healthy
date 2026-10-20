@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "command": [
+    "/bin/sh",
+    "-c",
+    "set -eu; git fetch origin main; PR_JSON=$(gh pr view 28 --repo kelvinhuang0327/Healthy --json state,mergedAt,mergeCommit,headRefName,headRefOid,baseRefName,url); printf \"%s\\n\" \"$PR_JSON\"; MERGE_SHA=$(printf \"%s\" \"$PR_JSON\" | jq -r .mergeCommit.oid); test \"$MERGE_SHA\" = 863d56b4428aaf3ffad6d24635f3edaec5d4269f; test \"$(git rev-parse origin/main)\" = \"$MERGE_SHA\"; git merge-base --is-ancestor 07e65957263b7754f29f095e3ef79a6e006b8d7f origin/main; CHECKS=$(gh api \"repos/kelvinhuang0327/Healthy/commits/$MERGE_SHA/check-runs\"); printf \"%s\\n\" \"$CHECKS\" | jq \".check_runs[] | {name,status,conclusion,head_sha,html_url}\"; test \"$(printf \"%s\" \"$CHECKS\" | jq -r \".check_runs[] | select(.name == \\\"verify\\\") | .conclusion\")\" = success; git show origin/main:migrations/versions/20260910_0016_sqlite_metric_import_identity.py | rg -n \"_assert_precision_downgrade_safe|BLOOD_GLUCOSE_DOWNGRADE_PRECISION_LOSS\"; git show origin/main:tests/api/test_sqlite_persistence.py | rg -n \"test_sqlite_precision_loss_downgrade_preserves_head_schema\"; printf \"%s\\n\" \"ORIGIN_MAIN=$MERGE_SHA\" \"FEATURE_REMOTE=$(git ls-remote origin refs/heads/codex/healthy-sqlite-persistence-v1 | awk \\\"{print \\\\$1}\\\")\" \"POST_MERGE_VERIFY=PASS\""
+  ],
+  "stdout": "{\"baseRefName\":\"main\",\"headRefName\":\"codex/healthy-sqlite-persistence-v1\",\"headRefOid\":\"07e65957263b7754f29f095e3ef79a6e006b8d7f\",\"mergeCommit\":{\"oid\":\"863d56b4428aaf3ffad6d24635f3edaec5d4269f\"},\"mergedAt\":\"2026-09-10T11:48:56Z\",\"state\":\"MERGED\",\"url\":\"https://github.com/kelvinhuang0327/Healthy/pull/28\"}\n{\n  \"name\": \"verify\",\n  \"status\": \"completed\",\n  \"conclusion\": \"success\",\n  \"head_sha\": \"863d56b4428aaf3ffad6d24635f3edaec5d4269f\",\n  \"html_url\": \"https://github.com/kelvinhuang0327/Healthy/actions/runs/34473290520/job/102857989731\"\n}\n39:def _assert_precision_downgrade_safe() -> None:\n54:        raise RuntimeError(\"BLOOD_GLUCOSE_DOWNGRADE_PRECISION_LOSS\")\n59:        _assert_precision_downgrade_safe()\n77:def test_sqlite_precision_loss_downgrade_preserves_head_schema(\nORIGIN_MAIN=863d56b4428aaf3ffad6d24635f3edaec5d4269f\nFEATURE_REMOTE=\nPOST_MERGE_VERIFY=PASS\n",
+  "stderr": "From https://github.com/kelvinhuang0327/Healthy\n * branch            main       -> FETCH_HEAD\n/bin/sh: $1: unbound variable\n",
+  "exit_status": 0,
+  "started_at": "2026-09-10T11:52:12Z",
+  "ended_at": "2026-09-10T11:52:15Z"
+}

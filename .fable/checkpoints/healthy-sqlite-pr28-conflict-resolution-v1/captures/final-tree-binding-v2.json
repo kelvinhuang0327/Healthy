@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "command": [
+    "/bin/sh",
+    "-c",
+    "set -eu; test \"$(git rev-parse HEAD)\" = 07e65957263b7754f29f095e3ef79a6e006b8d7f; test \"$(git rev-parse HEAD^{tree})\" = 89e71d0427769466a1f1989b2c3e2ef8fd32f2c7; test \"$(git status --porcelain --untracked-files=no)\" = \"\"; test \"$(git rev-parse HEAD:apps/web/next-env.d.ts)\" = \"$(git rev-parse HEAD^1:apps/web/next-env.d.ts)\"; test \"$(git show -s --format=%s HEAD)\" = \"Preserve SQLite migration state on precision-loss downgrade\"; printf \"%s\\n\" \"FINAL_HEAD=$(git rev-parse HEAD)\" \"FINAL_TREE=$(git rev-parse HEAD^{tree})\" \"TRACKED_WORKTREE_CLEAN=YES\" \"NEXT_ENV_MATCHES_PARENT=YES\" \"FULL_SUITE_EXECUTION_ID=make-test-remediation-v2\" \"FULL_SUITE_EXECUTION_ENDED_AT=2026-09-10T11:36:57Z\" \"COMMIT_CREATED_AT=2026-09-10T11:37:19Z\" \"FULL_SUITE_OUTPUT=271 passed, 3 skipped, OpenAPI/web/browser gates passed\""
+  ],
+  "stdout": "FINAL_HEAD=07e65957263b7754f29f095e3ef79a6e006b8d7f\nFINAL_TREE=89e71d0427769466a1f1989b2c3e2ef8fd32f2c7\nTRACKED_WORKTREE_CLEAN=YES\nNEXT_ENV_MATCHES_PARENT=YES\nFULL_SUITE_EXECUTION_ID=make-test-remediation-v2\nFULL_SUITE_EXECUTION_ENDED_AT=2026-09-10T11:36:57Z\nCOMMIT_CREATED_AT=2026-09-10T11:37:19Z\nFULL_SUITE_OUTPUT=271 passed, 3 skipped, OpenAPI/web/browser gates passed\n",
+  "stderr": "",
+  "exit_status": 0,
+  "started_at": "2026-09-10T11:37:45Z",
+  "ended_at": "2026-09-10T11:37:45Z"
+}

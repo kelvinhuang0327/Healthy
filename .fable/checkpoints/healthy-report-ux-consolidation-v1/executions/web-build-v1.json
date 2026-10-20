@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "task_id": "healthy-report-ux-consolidation-v1",
+  "execution_id": "web-build-v1",
+  "pid": 78651,
+  "status": "COMPLETED",
+  "durable_capture_path": "/Users/kelvin/VibeCoding-WorkSpace/Healthy/.fable/checkpoints/healthy-report-ux-consolidation-v1/captures/web-build-v1.json",
+  "started_at": "2026-09-11T04:11:31Z",
+  "ended_at": "2026-09-11T04:11:38Z"
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "task_id": "healthy-sqlite-pr28-conflict-resolution-v1",
+  "execution_id": "make-test-final-v2",
+  "pid": 21880,
+  "status": "COMPLETED",
+  "durable_capture_path": "/Users/kelvin/VibeCoding-WorkSpace/Healthy/.fable/checkpoints/healthy-sqlite-pr28-conflict-resolution-v1/captures/make-test-final-v2.json",
+  "started_at": "2026-09-10T10:09:13Z",
+  "ended_at": "2026-09-10T10:09:17Z"
+}

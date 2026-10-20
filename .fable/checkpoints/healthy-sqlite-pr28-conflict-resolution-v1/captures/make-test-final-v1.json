@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "command": [
+    "env",
+    "SQLITE_DATABASE_PATH=/tmp/healthy-pr28-integration-PS8Pgh/healthy.db",
+    "make",
+    "test"
+  ],
+  "stdout": "",
+  "stderr": "Expected Node 24.18.0, received 20.19.5\nmake: *** [node-check] Error 1\n",
+  "exit_status": 2,
+  "started_at": "2026-09-10T10:08:33Z",
+  "ended_at": "2026-09-10T10:08:33Z"
+}

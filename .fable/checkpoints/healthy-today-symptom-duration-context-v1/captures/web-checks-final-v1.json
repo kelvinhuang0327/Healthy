@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "command": [
+    "make",
+    "web-typecheck",
+    "web-lint",
+    "web-build"
+  ],
+  "stdout": "npm_config_cache=/Users/kelvin/VibeCoding-WorkSpace/Healthy/.npm-cache npm run web:typecheck\n\n> healthy@0.1.0 web:typecheck\n> npm run typecheck --workspace @healthy/web\n\n\n> @healthy/web@0.1.0 typecheck\n> tsc --noEmit\n\nnpm_config_cache=/Users/kelvin/VibeCoding-WorkSpace/Healthy/.npm-cache npm run web:lint\n\n> healthy@0.1.0 web:lint\n> npm run lint --workspace @healthy/web\n\n\n> @healthy/web@0.1.0 lint\n> eslint .\n\nnpm_config_cache=/Users/kelvin/VibeCoding-WorkSpace/Healthy/.npm-cache npm run web:build\n\n> healthy@0.1.0 web:build\n> npm run build --workspace @healthy/web\n\n\n> @healthy/web@0.1.0 build\n> next build --webpack\n\n▲ Next.js 16.2.11 (webpack)\n\n  Creating an optimized production build ...\n✓ Compiled successfully in 1395ms\n  Running TypeScript ...\n  Finished TypeScript in 2.2s ...\n  Collecting page data using 8 workers ...\n  Generating static pages using 8 workers (0/6) ...\n  Generating static pages using 8 workers (1/6) \r\n  Generating static pages using 8 workers (2/6) \r\n  Generating static pages using 8 workers (4/6) \r\n✓ Generating static pages using 8 workers (6/6) in 586ms\n  Finalizing page optimization ...\n  Collecting build traces ...\n\nRoute (app)\n┌ ○ /\n├ ○ /_not-found\n├ ○ /analytics\n├ ƒ /api/v1/[...path]\n├ ○ /history\n└ ○ /reports\n\n\n○  (Static)   prerendered as static content\nƒ  (Dynamic)  server-rendered on demand\n\n",
+  "stderr": "",
+  "exit_status": 0,
+  "started_at": "2026-10-01T13:35:29Z",
+  "ended_at": "2026-10-01T13:35:57Z"
+}

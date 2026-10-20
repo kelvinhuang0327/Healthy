@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "command": [
+    "/bin/sh",
+    "-c",
+    "set -eu; git fetch origin main codex/healthy-sqlite-persistence-v1; printf \"%s\\n\" \"LOCAL_HEAD=$(git rev-parse HEAD)\" \"LOCAL_TREE=$(git rev-parse HEAD^{tree})\" \"ORIGIN_MAIN=$(git rev-parse origin/main)\" \"ORIGIN_FEATURE=$(git rev-parse origin/codex/healthy-sqlite-persistence-v1)\"; gh pr view 28 --repo kelvinhuang0327/Healthy --json number,state,isDraft,mergeable,mergeStateStatus,headRefName,headRefOid,baseRefName,statusCheckRollup,url"
+  ],
+  "stdout": "LOCAL_HEAD=07e65957263b7754f29f095e3ef79a6e006b8d7f\nLOCAL_TREE=89e71d0427769466a1f1989b2c3e2ef8fd32f2c7\nORIGIN_MAIN=5a35c3cf7c549bc8c42c9952f2e8ef8085c0c2a3\nORIGIN_FEATURE=362006b7f653fc316882a0eb6ec02d64713fb430\n{\"baseRefName\":\"main\",\"headRefName\":\"codex/healthy-sqlite-persistence-v1\",\"headRefOid\":\"362006b7f653fc316882a0eb6ec02d64713fb430\",\"isDraft\":false,\"mergeStateStatus\":\"DIRTY\",\"mergeable\":\"CONFLICTING\",\"number\":28,\"state\":\"OPEN\",\"statusCheckRollup\":[],\"url\":\"https://github.com/kelvinhuang0327/Healthy/pull/28\"}\n",
+  "stderr": "From https://github.com/kelvinhuang0327/Healthy\n * branch            main       -> FETCH_HEAD\n * branch            codex/healthy-sqlite-persistence-v1 -> FETCH_HEAD\n",
+  "exit_status": 0,
+  "started_at": "2026-09-10T11:45:39Z",
+  "ended_at": "2026-09-10T11:45:40Z"
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "command": [
+    "make",
+    "web-lint"
+  ],
+  "stdout": "npm_config_cache=/Users/kelvin/VibeCoding-WorkSpace/Healthy/.npm-cache npm run web:lint\n\n> healthy@0.1.0 web:lint\n> npm run lint --workspace @healthy/web\n\n\n> @healthy/web@0.1.0 lint\n> eslint .\n\n",
+  "stderr": "",
+  "exit_status": 0,
+  "started_at": "2026-09-11T04:11:24Z",
+  "ended_at": "2026-09-11T04:11:27Z"
+}

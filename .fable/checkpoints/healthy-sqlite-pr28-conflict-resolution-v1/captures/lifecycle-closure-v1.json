@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "command": [
+    "/bin/sh",
+    "-c",
+    "set -eu; test \"$(git branch --show-current)\" = main; test \"$(git rev-parse HEAD)\" = 863d56b4428aaf3ffad6d24635f3edaec5d4269f; test \"$(git rev-parse origin/main)\" = 863d56b4428aaf3ffad6d24635f3edaec5d4269f; test \"$(git branch --list codex/healthy-sqlite-persistence-v1)\" = \"\"; test -z \"$(git ls-remote origin refs/heads/codex/healthy-sqlite-persistence-v1)\"; test \"$(git status --porcelain --untracked-files=no)\" = \"\"; PR_JSON=$(gh pr view 28 --repo kelvinhuang0327/Healthy --json state,mergedAt,mergeCommit,headRefOid); test \"$(printf \"%s\" \"$PR_JSON\" | jq -r .state)\" = MERGED; test \"$(printf \"%s\" \"$PR_JSON\" | jq -r .mergeCommit.oid)\" = 863d56b4428aaf3ffad6d24635f3edaec5d4269f; CHECKS=$(gh api repos/kelvinhuang0327/Healthy/commits/863d56b4428aaf3ffad6d24635f3edaec5d4269f/check-runs); test \"$(printf \"%s\" \"$CHECKS\" | jq -r \".check_runs[] | select(.name == \\\"verify\\\") | .conclusion\")\" = success; printf \"%s\\n\" \"FULL_PR_LIFECYCLE_CLOSED=YES\" \"CURRENT_BRANCH=main\" \"MAIN=863d56b4428aaf3ffad6d24635f3edaec5d4269f\" \"PR=MERGED\" \"REMOTE_FEATURE=ABSENT\" \"LOCAL_FEATURE=ABSENT\" \"TRACKED_WORKTREE=CLEAN\" \"POST_MERGE_CI=SUCCESS\" \"DURABLE_EVIDENCE=RETAINED_UNDER_.fable\""
+  ],
+  "stdout": "FULL_PR_LIFECYCLE_CLOSED=YES\nCURRENT_BRANCH=main\nMAIN=863d56b4428aaf3ffad6d24635f3edaec5d4269f\nPR=MERGED\nREMOTE_FEATURE=ABSENT\nLOCAL_FEATURE=ABSENT\nTRACKED_WORKTREE=CLEAN\nPOST_MERGE_CI=SUCCESS\nDURABLE_EVIDENCE=RETAINED_UNDER_.fable\n",
+  "stderr": "",
+  "exit_status": 0,
+  "started_at": "2026-09-10T11:53:58Z",
+  "ended_at": "2026-09-10T11:54:00Z"
+}

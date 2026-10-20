@@ -52,6 +52,7 @@ h2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 18px;
+  overflow-wrap: anywhere;
 }
 
 .card {
@@ -125,6 +126,7 @@ button.secondary {
 
 .person {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 16px;
   border: 1px solid #d7e5df;
@@ -571,10 +573,6 @@ button:disabled {
   .session {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .person {
-    flex-wrap: wrap;
   }
 
   .edit-actions {

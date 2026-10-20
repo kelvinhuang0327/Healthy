@@ -1,9 +1,58 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 const originalPassword = "Synthetic-Original-Password-42";
 const nextPassword = "Synthetic-Replacement-Password-91";
+
+for (const scenario of [
+  { width: 1280, height: 720, name: "合成摘要人物 <script>window.exportInjected=true</script>" },
+  { width: 960, height: 900, name: "合成摘要人物 <script>window.exportInjected=true</script>" },
+  { width: 1280, height: 720, name: "Person".repeat(20) },
+  { width: 390, height: 844, name: "Person".repeat(20) },
+]) {
+  test(`person selection stays inside its card at ${scenario.width}px with ${scenario.name.length} characters`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: scenario.width, height: scenario.height });
+    await register(page, scenario.name);
+    const primary = page.getByTestId("person-card").first();
+    await primary.click({ timeout: 5_000 });
+    const form = page.getByTestId("person-form");
+    await form.getByLabel("Display name").fill("另一合成人物");
+    await form.getByLabel("Relationship").selectOption("child");
+    await form.getByRole("button", { name: "Create Person" }).click();
+    const child = page.getByTestId("person-card").filter({ hasText: "另一合成人物" });
+    await expect(child).toBeVisible();
+    await child.scrollIntoViewIfNeeded();
+    const layout = await child.evaluate((element) => {
+      const rectangle = (node: Element) => {
+        const { left, right, top, bottom, width, height } = node.getBoundingClientRect();
+        return { left, right, top, bottom, width, height };
+      };
+      const target = rectangle(element);
+      const card = rectangle(element.closest("article")!);
+      const hit = document.elementFromPoint(target.left + target.width / 2, target.top + target.height / 2);
+      return {
+        target, card,
+        hit: hit?.closest("[data-testid]")?.getAttribute("data-testid"),
+        font: getComputedStyle(element).fontFamily,
+        personTrack: getComputedStyle(element.parentElement!).gridTemplateColumns,
+        pageWidth: document.documentElement.scrollWidth,
+        viewportWidth: innerWidth,
+      };
+    });
+    await writeFile(testInfo.outputPath("person-layout.json"), JSON.stringify(layout, null, 2));
+    await page.screenshot({ path: testInfo.outputPath("person-layout.png"), fullPage: true });
+    await child.click({ timeout: 5_000 });
+    await expect(child).toHaveAttribute("aria-pressed", "true");
+    await expect(primary).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("summary-export-link")).toHaveAttribute("href", `/api/v1/persons/${await child.getAttribute("data-person-id")}/summary-export`);
+    expect(layout.target.right).toBeLessThanOrEqual(layout.card.right);
+    expect(layout.hit).toBe("person-card");
+    expect(layout.pageWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    await primary.click({ timeout: 5_000 });
+    await expect(primary).toHaveAttribute("aria-pressed", "true");
+  });
+}
 
 async function signIn(page: Page, email: string, password: string) {
   await page.goto("/");

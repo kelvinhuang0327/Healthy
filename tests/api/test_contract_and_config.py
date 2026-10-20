@@ -17,6 +17,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
     document = create_app().openapi()
     assert set(document["paths"]) == {
         "/v1/accounts",
+        "/v1/accounts/current/password",
         "/v1/sessions",
         "/v1/sessions/current",
         "/v1/session",
@@ -48,6 +49,8 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         "/v1/persons/{person_id}/report-intakes",
         "/v1/persons/{person_id}/report-intakes/{intake_id}",
         "/v1/persons/{person_id}/report-intakes/{intake_id}/confirm",
+        "/v1/persons/{person_id}/report-intakes/{intake_id}/retry",
+        "/v1/persons/{person_id}/summary-export",
         "/v1/persons/{person_id}/assistant/today",
         "/v1/persons/{person_id}/reminders/due",
         "/v1/persons/{person_id}/history",
@@ -61,6 +64,7 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
     }
     assert operations == {
         ("POST", "/v1/accounts"),
+        ("POST", "/v1/accounts/current/password"),
         ("POST", "/v1/sessions"),
         ("DELETE", "/v1/sessions/current"),
         ("GET", "/v1/session"),
@@ -113,6 +117,8 @@ def test_openapi_has_only_approved_product_endpoints_and_cookie_auth() -> None:
         ("GET", "/v1/persons/{person_id}/report-intakes/{intake_id}"),
         ("PATCH", "/v1/persons/{person_id}/report-intakes/{intake_id}"),
         ("POST", "/v1/persons/{person_id}/report-intakes/{intake_id}/confirm"),
+        ("POST", "/v1/persons/{person_id}/report-intakes/{intake_id}/retry"),
+        ("GET", "/v1/persons/{person_id}/summary-export"),
         ("GET", "/v1/persons/{person_id}/assistant/today"),
         ("GET", "/v1/persons/{person_id}/reminders/due"),
         ("GET", "/v1/persons/{person_id}/history"),
